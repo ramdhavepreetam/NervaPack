@@ -42,7 +42,8 @@ class VectorStore:
 
         for entity in entities:
             documents.append(entity["summary"])
-            metadatas.append({"node_id": entity["node_id"], "type": "ast"})
+            # Assuming 'file_path' is added to the entity dict in cli.py
+            metadatas.append({"node_id": entity["node_id"], "type": "ast", "file_path": entity.get("file_path", "")})
             ids.append(entity["node_id"])
 
         self.collection.add(
@@ -56,3 +57,7 @@ class VectorStore:
             query_texts=[query],
             n_results=n_results
         )
+
+    def delete_by_file(self, file_path: str):
+        """Delete all vectors associated with a specific file."""
+        self.collection.delete(where={"file_path": file_path})

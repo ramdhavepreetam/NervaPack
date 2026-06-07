@@ -45,15 +45,154 @@ def ingest(path: str = typer.Argument(".", help="Path to the repository to inges
             node_id = f"{e.type}:{e.file_path}:{e.name}:{e.start_line}"
             ast_docs.append({
                 "node_id": node_id,
-                "summary": f"This is a {e.type} named {e.name} in {e.file_path}. Code:\n{e.content}"
+                "summary": f"This is a {e.type} named {e.name} in {e.file_path}. Code:\n{e.content}",
+                "file_path": e.file_path
             })
         
         vstore.ingest_ast_entities(ast_docs)
-        console.print("Vector Store ingestion complete.")
+        console.print("AST Vector ingestion complete.")
+
+        from nervapack.parser.md_chunker import scan_markdown_directory
+        console.print("Scanning directory for Markdown docs...")
+        md_chunks = scan_markdown_directory(path)
+        console.print(f"Found {len(md_chunks)} Markdown chunks.")
+        
+        if md_chunks:
+            # Ingest to vector store
+            vstore.ingest_chunks(md_chunks)
+            
+            # Add to graph and Bind with LLM
+            from nervapack.llm.summarizer import LLMSummarizer
+            llm = LLMSummarizer()
+            
+            console.print("Binding documentation to AST (this may take a while)...")
+            for i, chunk in enumerate(md_chunks):
+                md_node_id = f"md_{chunk['file_path']}_{i}"
+                if not graph.has_node(md_node_id):
+                    graph.add_node(md_node_id, type="markdown", header=chunk['header'], content=chunk['content'], file_path=chunk['file_path'])
+                
+                # Try to bind
+                matched_ids = llm.bind_docs_to_ast(chunk['content'], ast_docs)
+                for matched_id in matched_ids:
+                    if graph.has_node(matched_id):
+                        graph.add_edge(md_node_id, matched_id, relation="EXPLAINS")
+            
+            builder.save_graph()
+            console.print("Semantic binding complete.")
+
     except Exception as e:
-        console.print(f"[bold yellow]Warning:[/bold yellow] Failed to ingest into Vector Store: {e}")
+        console.print(f"[bold red]Error during ingestion:[/bold red] {e}")
 
     console.print("[bold green]Ingestion complete.[/bold green]")
+
+@app.command()
+def sync(path: str = typer.Argument(".", help="Path to the repository to sync")):
+    """
+    Sync graph with modified git files.
+    """
+    from nervapack.git.tracker import GitTracker
+    from nervapack.graph.builder import GraphBuilder
+    from nervapack.graph.vector_store import VectorStore
+    from nervapack.parser.ast_parser import ASTParser
+    from nervapack.parser.md_chunker import MarkdownChunker
+    import os
+
+    console.print("[bold blue]Syncing changed files with NervaPack graph...[/bold blue]")
+    
+    tracker = GitTracker(path)
+    if not tracker.repo:
+        console.print("[bold red]Not a git repository. Cannot sync.[/bold red]")
+        raise typer.Exit(1)
+        
+    changed_files = tracker.get_changed_files()
+    if not changed_files:
+        console.print("[bold green]No files changed. Graph is up to date.[/bold green]")
+        raise typer.Exit(0)
+        
+    console.print(f"Found {len(changed_files)} changed files.")
+    
+    try:
+        builder = GraphBuilder()
+        graph = builder.load_graph()
+        vstore = VectorStore()
+    except Exception as e:
+        console.print(f"[bold red]Failed to load graph or vector store. Run 'nervapack ingest' first.[/bold red]")
+        raise typer.Exit(1)
+
+    ast_parser = ASTParser()
+    md_chunker = MarkdownChunker()
+    
+    ast_docs = []
+    
+    # Pre-gather all existing ast_docs for LLM binding
+    # We reconstruct a simple mock summary for existing nodes just for binding if needed.
+    # In a real app, we'd pull these from the graph directly.
+    for node, data in graph.nodes(data=True):
+        if data.get("type") in ["class", "function", "import"]:
+            ast_docs.append({
+                "node_id": node,
+                "summary": f"This is a {data.get('type')} named {data.get('name')} in {data.get('file_path')}. Code:\n{data.get('content')}"
+            })
+
+    for f in changed_files:
+        file_path = os.path.join(path, f)
+        
+        # 1. Prune old nodes and vectors
+        builder.remove_nodes_for_file(file_path)
+        vstore.delete_by_file(file_path)
+        
+        if not os.path.exists(file_path):
+            console.print(f"Removed [red]{f}[/red]")
+            continue
+            
+        # 2. Re-parse and insert
+        if file_path.endswith(('.py', '.js', '.jsx', '.ts', '.tsx')):
+            entities = ast_parser.parse_file(file_path)
+            
+            # Add to graph
+            file_node_id = f"file:{file_path}"
+            if not graph.has_node(file_node_id):
+                graph.add_node(file_node_id, type="file", path=file_path)
+                
+            for entity in entities:
+                entity_node_id = f"{entity.type}:{entity.file_path}:{entity.name}:{entity.start_line}"
+                graph.add_node(
+                    entity_node_id, 
+                    type=entity.type, 
+                    name=entity.name, 
+                    file_path=entity.file_path,
+                    start_line=entity.start_line,
+                    end_line=entity.end_line,
+                    content=entity.content
+                )
+                graph.add_edge(file_node_id, entity_node_id, relation="DEFINES")
+                
+                # Add to vector store
+                node_summary = {"node_id": entity_node_id, "summary": f"This is a {entity.type} named {entity.name} in {entity.file_path}. Code:\n{entity.content}", "file_path": entity.file_path}
+                vstore.ingest_ast_entities([node_summary])
+                ast_docs.append(node_summary)
+                
+            console.print(f"Updated AST for [green]{f}[/green]")
+            
+        elif file_path.endswith('.md'):
+            chunks = md_chunker.chunk_file(file_path)
+            if chunks:
+                vstore.ingest_chunks(chunks)
+                
+                from nervapack.llm.summarizer import LLMSummarizer
+                llm = LLMSummarizer()
+                for i, chunk in enumerate(chunks):
+                    md_node_id = f"md_{chunk['file_path']}_{i}"
+                    graph.add_node(md_node_id, type="markdown", header=chunk['header'], content=chunk['content'], file_path=chunk['file_path'])
+                    matched_ids = llm.bind_docs_to_ast(chunk['content'], ast_docs)
+                    for matched_id in matched_ids:
+                        if graph.has_node(matched_id):
+                            graph.add_edge(md_node_id, matched_id, relation="EXPLAINS")
+                            
+            console.print(f"Updated Markdown for [cyan]{f}[/cyan]")
+            
+    builder.save_graph()
+    console.print("[bold green]Sync complete.[/bold green]")
 
 @app.command()
 def query(prompt: str = typer.Argument(..., help="Query to run against the knowledge graph")):
@@ -105,7 +244,7 @@ def status():
     Show the status of the local NervaPack graph.
     """
     from nervapack.graph.builder import GraphBuilder
-    from nervapack.graph.sync import GitSync
+    from nervapack.git.tracker import GitTracker
     
     console.print("[bold cyan]NervaPack Status:[/bold cyan]")
     
@@ -118,7 +257,7 @@ def status():
     except Exception:
         console.print("- Graph loaded: [red]No (Run 'nervapack ingest')[/red]")
 
-    gitsync = GitSync()
+    gitsync = GitTracker()
     if gitsync.repo:
         changed = gitsync.get_changed_files()
         console.print(f"- Git repo detected: [green]Yes[/green]")

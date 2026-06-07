@@ -48,3 +48,17 @@ class MarkdownChunker:
                 })
                 
         return chunks
+
+def scan_markdown_directory(directory: str) -> List[Dict[str, str]]:
+    import os
+    chunker = MarkdownChunker()
+    all_chunks = []
+    for root, _, files in os.walk(directory):
+        # Ignore common bad directories
+        if any(ignored in root for ignored in [".git", "node_modules", "venv", "__pycache__"]):
+            continue
+        for file in files:
+            if file.endswith(".md"):
+                file_path = os.path.join(root, file)
+                all_chunks.extend(chunker.chunk_file(file_path))
+    return all_chunks

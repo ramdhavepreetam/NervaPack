@@ -1,7 +1,7 @@
 import git
 from typing import List
 
-class GitSync:
+class GitTracker:
     def __init__(self, repo_path: str = "."):
         self.repo_path = repo_path
         try:

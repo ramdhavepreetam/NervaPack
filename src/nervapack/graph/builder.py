@@ -43,3 +43,16 @@ class GraphBuilder:
     def load_graph(self, path: str = ".nervapack/graph.graphml"):
         self.graph = nx.read_graphml(path)
         return self.graph
+
+    def remove_nodes_for_file(self, file_path: str):
+        """Removes the file node and all entities associated with it."""
+        nodes_to_remove = []
+        file_node_id = f"file:{file_path}"
+        if self.graph.has_node(file_node_id):
+            nodes_to_remove.append(file_node_id)
+        
+        for node, data in self.graph.nodes(data=True):
+            if data.get("file_path") == file_path:
+                nodes_to_remove.append(node)
+                
+        self.graph.remove_nodes_from(nodes_to_remove)
