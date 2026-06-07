@@ -4,7 +4,7 @@ class Nervapack < Formula
   # Update url and sha256 after running: pip download nervapack==<ver> --no-deps --no-binary :all:
   # then: shasum -a 256 nervapack-<ver>.tar.gz
   url "https://files.pythonhosted.org/packages/source/n/nervapack/nervapack-0.1.0.tar.gz"
-  sha256 "FILL_IN_AFTER_PYPI_PUBLISH"
+  sha256 "b390f43c82d6c4fa3ad6114270c6ea4632c4ddb520ff33efb8769d05182fab3b"
   license "MIT"
 
   depends_on "python@3.12"
