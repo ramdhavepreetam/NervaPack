@@ -1,86 +1,215 @@
 # NervaPack
 
-**NervaPack** is a privacy-first, offline knowledge graph designed to solve "token waste" and privacy risks inherent in standard Vector RAG. It runs entirely on your local machine (optimized for Apple Silicon). 
+[![PyPI version](https://img.shields.io/pypi/v/nervapack.svg)](https://pypi.org/project/nervapack/)
+[![Python Versions](https://img.shields.io/pypi/pyversions/nervapack.svg)](https://pypi.org/project/nervapack/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-By explicitly binding human-readable documentation to deterministic Abstract Syntax Tree (AST) code structures via a local LLM, NervaPack allows you to query your entire codebase locally and retrieve hyper-targeted context windows.
+**NervaPack** is a privacy-first, offline knowledge graph for your codebase. It solves two fundamental problems with standard Vector RAG:
+
+- **Token waste** — chunk-based RAG retrieves blobs of text that may only tangentially relate to your query, bloating your context window.
+- **Privacy risk** — sending code to cloud embedding APIs leaks your proprietary logic.
+
+NervaPack runs 100% on your machine. It uses `tree-sitter` to parse your codebase into a deterministic Abstract Syntax Tree graph, then uses a local Ollama model to draw hard semantic edges between your documentation and your code. Queries traverse this graph with a K-Hop BFS, returning a hyper-targeted, token-efficient context window — no cloud required.
 
 ---
 
-## 🚀 Quick Start Guide
+## Why NervaPack vs. standard Vector RAG
 
-### 1. Prerequisites
+| | Standard Vector RAG | NervaPack |
+|---|---|---|
+| **Parsing** | Arbitrary text chunks | Deterministic AST nodes (class, function, import) |
+| **Retrieval** | Nearest-neighbor blob | K-Hop BFS on a structural graph |
+| **Doc ↔ Code links** | None | Hard `EXPLAINS` edges drawn by local LLM |
+| **Privacy** | Cloud embeddings | 100% local (ChromaDB + Ollama) |
+| **Incremental sync** | Re-index everything | Surgical per-file update via GitPython diff |
+
+---
+
+## Prerequisites
+
 - **Python 3.10+**
-- **Ollama**: You must have [Ollama](https://ollama.com/) installed and running locally. 
-  - Pull a local model before running (e.g., `ollama run llama3` or `phi3`). The default model NervaPack uses is `llama3`.
-- **Git**: Ensure your project is a Git repository (`git init`).
-
-### 2. Installation
-To install NervaPack in your project environment, clone this repository and install it via `pip`:
-
-```bash
-git clone https://github.com/ramdhavepreetam/NervaPack.git
-cd NervaPack
-pip install -e .
-```
-
-*Note: The first time you run this, `chromadb` will download `onnxruntime` models to your cache, and `tree-sitter` bindings will be built.*
+- **Ollama** — install from [ollama.com](https://ollama.com/), then pull a model:
+  ```bash
+  ollama pull llama3
+  ```
+  NervaPack defaults to `llama3`. Any model that can follow instructions works.
+- **Git** — your project must be a git repository (`git init` if not).
 
 ---
 
-## 🛠️ How to Use NervaPack in Your Projects
+## Installation
 
-Once installed, NervaPack provides a CLI called `nervapack` that you can run at the root of any Git repository.
-
-### Step 1: Ingest Your Codebase
-To build your initial Knowledge Graph, run:
+**Option A — Homebrew (Mac/Linux, recommended)**
 ```bash
+brew tap ramdhavepreetam/nervapack
+brew install nervapack
+```
+
+**Option B — pipx (any platform, cleanest Python install)**
+```bash
+pipx install nervapack
+```
+
+**Option C — pip**
+```bash
+pip install nervapack
+```
+
+> On first run, `chromadb` downloads `onnxruntime` embedding models to your cache and `tree-sitter` compiles its language bindings. This is a one-time setup (~1–2 min).
+
+---
+
+## Quick Start
+
+```bash
+cd your-project/
+
+# 1. Build the knowledge graph (run once)
 nervapack ingest .
-```
-**What happens behind the scenes?**
-1. **Structural Parsing:** `tree-sitter` scans all `.py`, `.js`, and `.ts` files to identify Classes, Functions, and Imports exactly, avoiding arbitrary text chunks.
-2. **Semantic Docs:** It scans all `.md` files and chunks them by headers.
-3. **LLM Binding:** It feeds the Markdown prose to your local Ollama model. If Ollama determines the prose explains a specific code entity, NervaPack draws a hard `EXPLAINS` edge in the graph.
-4. **Vector Storage:** Summaries and code snippets are embedded into a local `ChromaDB` instance (`.nervapack/chroma_db`).
 
-*(Note: Depending on the size of your codebase and your local machine's speed, the initial LLM Binding step may take several minutes).*
+# 2. Query for context
+nervapack query "How does authentication work?"
 
-### Step 2: Query for Context
-When you need context for a feature, bug, or general question, simply query the graph:
-```bash
-nervapack query "How does the CLI work?"
-```
-**What happens behind the scenes?**
-1. NervaPack converts your prompt into an embedding and queries ChromaDB to find the most relevant nodes.
-2. It uses those nodes as "seeds" and performs a **K-Hop Breadth-First Search (BFS)** through the NetworkX graph.
-3. It crawls adjacent dependencies (e.g., finding the Markdown documentation that explains the matched function) and returns a highly compressed, token-efficient Markdown snippet directly to your terminal.
-
-### Step 3: Fast Incremental Syncs
-As you code, you don't want to re-parse the entire repository. When you modify files, simply run:
-```bash
+# 3. After modifying files, sync the graph incrementally
 nervapack sync .
-```
-**What happens behind the scenes?**
-NervaPack hooks into `GitPython` to check your working tree diffs. It prunes the old vectors and graph nodes associated *only* with the files you modified or deleted, and selectively re-ingests the new code. This turns a 10-minute full ingestion into a 2-second surgical update.
 
-### Step 4: Check Status
-To view the health of your graph, total nodes, edges, and see what files are currently out of sync:
-```bash
+# 4. Check graph health
 nervapack status
 ```
 
 ---
 
-## 📁 Architecture Overview
+## Command Reference
 
-- **Storage Layers:**
-  - `Vector Store (ChromaDB)`: Handles semantic similarity searches.
-  - `Structural Graph (NetworkX)`: Maps exact deterministic relationships (`DEFINES`, `EXPLAINS`, `IMPLEMENTS`).
-- **Core Modules:**
-  - `nervapack.parser.ast_parser`: Deterministic Tree-Sitter parsing.
-  - `nervapack.parser.md_chunker`: Hierarchical prose chunking.
-  - `nervapack.git.tracker`: Temporal diffing for surgical updates.
-  - `nervapack.llm.summarizer`: Local LLM interface for drawing edges.
-  - `nervapack.graph.retrieval`: BFS context crawler.
+### `nervapack ingest [PATH]`
 
-## 🔒 Privacy
-NervaPack is 100% offline. No code or documentation ever leaves your machine. Vector embeddings are stored locally in the `.nervapack` directory, and LLM queries are routed exclusively to your local `localhost:11434` Ollama instance.
+Scans `PATH` (default: `.`) and builds the full knowledge graph.
+
+What happens:
+1. `tree-sitter` parses all `.py`, `.js`, `.jsx`, `.ts`, `.tsx` files into Classes, Functions, and Imports — exact AST nodes, not text chunks.
+2. All `.md` files are chunked by header hierarchy.
+3. Each Markdown chunk is sent to your local Ollama model. If the model identifies a code entity the prose explains, a hard `EXPLAINS` edge is written into the graph.
+4. All nodes are embedded and stored in a local ChromaDB instance (`.nervapack/chroma_db`).
+
+> The initial LLM binding pass is the slowest step. On a large repo with many docs, budget several minutes.
+
+---
+
+### `nervapack query PROMPT`
+
+Retrieves context from the graph for a natural-language prompt.
+
+What happens:
+1. The prompt is embedded and ChromaDB returns the top-3 most semantically similar nodes.
+2. Those nodes seed a K-Hop Breadth-First Search (default `max_hops=1`) through the NetworkX graph.
+3. Adjacent nodes — including any Markdown docs linked via `EXPLAINS` edges — are collected into a compressed Markdown snippet and printed to your terminal.
+
+The output is designed to be pasted directly into an LLM prompt as context.
+
+---
+
+### `nervapack sync [PATH]`
+
+Incrementally updates the graph for files changed since the last ingest.
+
+What happens:
+1. `GitPython` diffs your working tree to find modified and deleted files.
+2. For each changed file, old graph nodes and ChromaDB vectors are pruned.
+3. Only the changed files are re-parsed and re-ingested.
+
+A full `ingest` on a large codebase can take minutes. `sync` turns that into a 2–5 second surgical update.
+
+---
+
+### `nervapack status`
+
+Prints the current state of the graph: node count, edge count, and any files that are out of sync with the graph.
+
+---
+
+## Configuration
+
+NervaPack reads the Ollama model from the `LLMSummarizer` class (`src/nervapack/llm/summarizer.py`). To use a different model, set `model` to any model you have pulled locally:
+
+```python
+# src/nervapack/llm/summarizer.py
+self.model = "phi3"   # or "mistral", "codellama", etc.
+```
+
+Ollama is expected at `http://localhost:11434` (its default). To use a remote Ollama instance, set `OLLAMA_HOST`:
+
+```bash
+OLLAMA_HOST=http://my-server:11434 nervapack ingest .
+```
+
+---
+
+## Architecture
+
+```
+nervapack ingest .
+       │
+       ├─ ASTParser (tree-sitter)
+       │    └─ ParsedEntity[]: class, function, import
+       │
+       ├─ GraphBuilder (NetworkX DiGraph)
+       │    ├─ Nodes: file, class, function, import, markdown
+       │    └─ Edges: DEFINES, EXPLAINS
+       │
+       ├─ LLMSummarizer (Ollama)
+       │    └─ Draws EXPLAINS edges: markdown → code entity
+       │
+       └─ VectorStore (ChromaDB)
+            └─ Embeds node summaries for semantic search
+
+nervapack query "..."
+       │
+       ├─ VectorStore.search() → seed node IDs
+       └─ GraphRetriever.retrieve_context() → BFS subgraph → Markdown
+```
+
+**Storage layout** (inside your project root):
+```
+.nervapack/
+├── graph.graphml       # NetworkX graph (deterministic structure)
+└── chroma_db/          # ChromaDB (semantic embeddings)
+```
+
+**Source modules:**
+| Module | Responsibility |
+|---|---|
+| `nervapack.parser.ast_parser` | Tree-sitter parsing → `ParsedEntity` objects |
+| `nervapack.parser.md_chunker` | Markdown → header-delimited chunks |
+| `nervapack.graph.builder` | Build and persist the NetworkX DiGraph |
+| `nervapack.graph.vector_store` | ChromaDB ingest and semantic search |
+| `nervapack.graph.retrieval` | K-Hop BFS context extraction |
+| `nervapack.llm.summarizer` | Local Ollama interface for LLM binding |
+| `nervapack.git.tracker` | GitPython diff for incremental sync |
+
+---
+
+## Privacy
+
+NervaPack is 100% offline. No code, documentation, or query ever leaves your machine:
+
+- Embeddings are generated by ChromaDB's built-in local model.
+- LLM calls go exclusively to `localhost:11434` (your Ollama instance).
+- All graph and vector data is stored in `.nervapack/` inside your project.
+
+Add `.nervapack/` to your `.gitignore` to keep it out of version control.
+
+---
+
+## Contributing
+
+1. Fork the repo and create a branch.
+2. Make your changes with tests where applicable.
+3. Open a pull request against `master`.
+
+Bug reports and feature requests go to the [issue tracker](https://github.com/ramdhavepreetam/NervaPack/issues).
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).

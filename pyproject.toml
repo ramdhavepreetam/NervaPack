@@ -8,18 +8,23 @@ version = "0.1.0"
 description = "Privacy-first, offline knowledge graph for developers"
 readme = "README.md"
 requires-python = ">=3.10"
+license = {text = "MIT"}
 authors = [
-    {name = "Preetam Ramdhave", email = "preetam.ramdhave@example.com"}
+    {name = "Preetam Ramdhave", email = "ramdhavepreetam@gmail.com"}
 ]
+keywords = ["knowledge-graph", "rag", "ast", "code-search", "offline", "llm", "developer-tools"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Build Tools",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12"
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent"
 ]
 dependencies = [
     "typer>=0.9.0",
@@ -33,6 +38,12 @@ dependencies = [
     "gitpython>=3.1.30",
     "chromadb>=0.4.24"
 ]
+
+[project.urls]
+Homepage = "https://github.com/ramdhavepreetam/NervaPack"
+Repository = "https://github.com/ramdhavepreetam/NervaPack"
+"Bug Tracker" = "https://github.com/ramdhavepreetam/NervaPack/issues"
+Documentation = "https://github.com/ramdhavepreetam/NervaPack#readme"
 
 [project.scripts]
 nervapack = "nervapack.cli:app"
