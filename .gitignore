@@ -1,0 +1,9 @@
+venv/
+.env
+__pycache__/
+*.pyc
+.nervapack/
+.DS_Store
+*.egg-info/
+build/
+dist/
