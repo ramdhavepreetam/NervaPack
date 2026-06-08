@@ -3,8 +3,8 @@ class Nervapack < Formula
   homepage "https://github.com/ramdhavepreetam/NervaPack"
   # Update url and sha256 after running: pip download nervapack==<ver> --no-deps --no-binary :all:
   # then: shasum -a 256 nervapack-<ver>.tar.gz
-  url "https://files.pythonhosted.org/packages/source/n/nervapack/nervapack-0.1.0.tar.gz"
-  sha256 "b390f43c82d6c4fa3ad6114270c6ea4632c4ddb520ff33efb8769d05182fab3b"
+  url "https://files.pythonhosted.org/packages/source/n/nervapack/nervapack-0.2.0.tar.gz"
+  sha256 "89c0a99b7f6d0cc849e4ea11149dbd5366fcda46e85ae111dec5cc41a2309bd7"
   license "MIT"
 
   depends_on "python@3.12"
