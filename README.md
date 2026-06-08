@@ -22,6 +22,8 @@ NervaPack runs 100% on your machine. It uses `tree-sitter` to parse your codebas
 | **Doc ↔ Code links** | None | Hard `EXPLAINS` edges drawn by local LLM |
 | **Privacy** | Cloud embeddings | 100% local (ChromaDB + Ollama) |
 | **Incremental sync** | Re-index everything | Surgical per-file update via GitPython diff |
+| **Token savings** | No measurement | Built-in dashboard shows exact reduction per query |
+| **Graph visibility** | Black box | Interactive HTML visualization of every node and edge |
 
 ---
 
@@ -55,6 +57,11 @@ pipx install nervapack
 pip install nervapack
 ```
 
+**With exact token counting:**
+```bash
+pip install "nervapack[metrics]"   # adds tiktoken for precise token counts
+```
+
 > On first run, `chromadb` downloads `onnxruntime` embedding models to your cache and `tree-sitter` compiles its language bindings. This is a one-time setup (~1–2 min).
 
 ---
@@ -67,13 +74,16 @@ cd your-project/
 # 1. Build the knowledge graph (run once)
 nervapack ingest .
 
-# 2. Query for context
+# 2. Query for context — see focused results + token savings dashboard
 nervapack query "How does authentication work?"
 
-# 3. After modifying files, sync the graph incrementally
+# 3. Visualize the graph in your browser
+nervapack visualize
+
+# 4. After modifying files, sync the graph incrementally
 nervapack sync .
 
-# 4. Check graph health
+# 5. Check graph health
 nervapack status
 ```
 
@@ -86,25 +96,89 @@ nervapack status
 Scans `PATH` (default: `.`) and builds the full knowledge graph.
 
 What happens:
-1. `tree-sitter` parses all `.py`, `.js`, `.jsx`, `.ts`, `.tsx` files into Classes, Functions, and Imports — exact AST nodes, not text chunks.
+1. `tree-sitter` parses source files into Classes, Functions, and Imports — exact AST nodes, not text chunks.
 2. All `.md` files are chunked by header hierarchy.
 3. Each Markdown chunk is sent to your local Ollama model. If the model identifies a code entity the prose explains, a hard `EXPLAINS` edge is written into the graph.
 4. All nodes are embedded and stored in a local ChromaDB instance (`.nervapack/chroma_db`).
 
 > The initial LLM binding pass is the slowest step. On a large repo with many docs, budget several minutes.
 
+**Supported languages** (bundled): Python, JavaScript, JSX, TypeScript, TSX
+
+**Additional languages** (optional extras):
+```bash
+pip install "nervapack[go]"           # Go
+pip install "nervapack[rust]"         # Rust
+pip install "nervapack[java]"         # Java
+pip install "nervapack[c]"            # C / C headers
+pip install "nervapack[cpp]"          # C++
+pip install "nervapack[ruby]"         # Ruby
+pip install "nervapack[csharp]"       # C#
+pip install "nervapack[all-languages]" # everything above
+```
+
 ---
 
 ### `nervapack query PROMPT`
 
-Retrieves context from the graph for a natural-language prompt.
+Retrieves context from the graph for a natural-language prompt, then prints a **token savings dashboard** comparing NervaPack against naive RAG.
 
 What happens:
 1. The prompt is embedded and ChromaDB returns the top-3 most semantically similar nodes.
-2. Those nodes seed a K-Hop Breadth-First Search (default `max_hops=1`) through the NetworkX graph.
-3. Adjacent nodes — including any Markdown docs linked via `EXPLAINS` edges — are collected into a compressed Markdown snippet and printed to your terminal.
+2. Those nodes seed a K-Hop Breadth-First Search (`max_hops=1`) through the NetworkX graph.
+3. Adjacent nodes — including any Markdown docs linked via `EXPLAINS` edges — are collected into a compressed Markdown snippet.
+4. The token efficiency panel is printed showing how many tokens were saved vs. sending the raw files.
 
-The output is designed to be pasted directly into an LLM prompt as context.
+**Example output:**
+
+```
+Running query: How does the CLI work?
+Found 3 seed nodes. Traversing graph...
+
+--- Retrieved Context ---
+# NervaPack Context Retrieval
+## File: src/nervapack/cli.py
+### FUNCTION: query (L200-L242)
+...
+--- End Context ---
+
+╭──────────────  NervaPack Token Efficiency  ──────────────╮
+│  Strategy              Tokens   Visual            Relative │
+│  Naive RAG (3 files)   12,840   ████████████████  100%    │
+│  NervaPack              1,180   █░░░░░░░░░░░░░░░    9.2%  │
+│ ──────────────────────────────────────────────────────────│
+│  Tokens saved: 11,660   Reduction: 90.8%                  │
+│  Cost saved (GPT-4o  $2.50/1M): $0.0292 per query         │
+│  Cost saved (Claude Sonnet $3/1M): $0.0350 per query      │
+╰───────────────────────────────────────────────────────────╯
+```
+
+**"Naive RAG"** is defined as the full content of every source file that contains a matched node — the maximum a standard "find relevant files, dump them whole" approach would send to an LLM. The comparison is honest and conservative.
+
+Install `nervapack[metrics]` for exact token counts via `tiktoken`. Without it, a character-based estimate is used and marked with `~`.
+
+The context output is designed to be pasted directly into an LLM prompt.
+
+---
+
+### `nervapack visualize`
+
+Renders the knowledge graph as an **interactive HTML file** and opens it in your browser.
+
+```bash
+nervapack visualize                          # saves to .nervapack/graph.html
+nervapack visualize --output ~/my-graph.html # custom output path
+nervapack visualize --no-browser             # generate without opening
+```
+
+What the visualization shows:
+- **Node shapes:** diamonds = files, dots = all other entities
+- **Node colors:** blue = file, green = function, amber = class, gray = import, lavender = markdown
+- **Edge styles:** solid = `DEFINES`, dashed = `EXPLAINS`
+- **Hover tooltips:** type, name, file, line range, and a code preview
+- **Interactive:** drag, zoom, click — spring-force physics layout
+
+The graph is a static HTML file with no external dependencies — share it, open it offline, or embed it in docs.
 
 ---
 
@@ -149,7 +223,7 @@ OLLAMA_HOST=http://my-server:11434 nervapack ingest .
 ```
 nervapack ingest .
        │
-       ├─ ASTParser (tree-sitter)
+       ├─ ASTParser (tree-sitter)          16 extensions, 9 languages
        │    └─ ParsedEntity[]: class, function, import
        │
        ├─ GraphBuilder (NetworkX DiGraph)
@@ -165,24 +239,33 @@ nervapack ingest .
 nervapack query "..."
        │
        ├─ VectorStore.search() → seed node IDs
-       └─ GraphRetriever.retrieve_context() → BFS subgraph → Markdown
+       ├─ GraphRetriever.retrieve_context() → BFS subgraph → Markdown
+       └─ TokenMeter → savings vs. naive RAG (tokens, %, cost)
+
+nervapack visualize
+       │
+       └─ Visualizer (pyvis) → .nervapack/graph.html
 ```
 
 **Storage layout** (inside your project root):
 ```
 .nervapack/
 ├── graph.graphml       # NetworkX graph (deterministic structure)
+├── graph.html          # Interactive visualization (generated by visualize)
 └── chroma_db/          # ChromaDB (semantic embeddings)
 ```
 
 **Source modules:**
 | Module | Responsibility |
 |---|---|
+| `nervapack.parser.language_registry` | Declarative registry of 16 file extensions and their tree-sitter grammars |
 | `nervapack.parser.ast_parser` | Tree-sitter parsing → `ParsedEntity` objects |
 | `nervapack.parser.md_chunker` | Markdown → header-delimited chunks |
 | `nervapack.graph.builder` | Build and persist the NetworkX DiGraph |
 | `nervapack.graph.vector_store` | ChromaDB ingest and semantic search |
 | `nervapack.graph.retrieval` | K-Hop BFS context extraction |
+| `nervapack.graph.visualizer` | pyvis interactive HTML export |
+| `nervapack.graph.token_meter` | Token counting and savings panel |
 | `nervapack.llm.summarizer` | Local Ollama interface for LLM binding |
 | `nervapack.git.tracker` | GitPython diff for incremental sync |
 
