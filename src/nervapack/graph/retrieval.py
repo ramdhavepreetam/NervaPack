@@ -1,5 +1,5 @@
 import networkx as nx
-from typing import List, Set, Dict
+from typing import List, Set, Dict, Tuple
 
 class GraphRetriever:
     def __init__(self, graph: nx.DiGraph):
@@ -73,3 +73,14 @@ class GraphRetriever:
                     markdown_lines.append("```\n")
 
         return "\n".join(markdown_lines)
+
+    def get_source_files(self, subgraph: nx.DiGraph) -> List[str]:
+        """Return deduplicated file paths of all non-file nodes in the subgraph."""
+        seen = set()
+        result = []
+        for _, data in subgraph.nodes(data=True):
+            fp = data.get("file_path")
+            if fp and data.get("type") != "file" and fp not in seen:
+                seen.add(fp)
+                result.append(fp)
+        return result

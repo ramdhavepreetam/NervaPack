@@ -36,10 +36,12 @@ dependencies = [
     "networkx>=3.1",
     "ollama>=0.2.0",
     "gitpython>=3.1.30",
-    "chromadb>=0.4.24"
+    "chromadb>=0.4.24",
+    "pyvis>=0.3.2",
 ]
 
 [project.optional-dependencies]
+metrics = ["tiktoken>=0.5.0"]
 go     = ["tree-sitter-go>=0.21.0"]
 rust   = ["tree-sitter-rust>=0.21.0"]
 java   = ["tree-sitter-java>=0.21.0"]

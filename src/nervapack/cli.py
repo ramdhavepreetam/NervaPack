@@ -205,9 +205,10 @@ def query(prompt: str = typer.Argument(..., help="Query to run against the knowl
     from nervapack.graph.builder import GraphBuilder
     from nervapack.graph.vector_store import VectorStore
     from nervapack.graph.retrieval import GraphRetriever
+    from nervapack.graph.token_meter import count_tokens, naive_rag_text, render_savings_panel
 
     console.print(f"[bold magenta]Running query:[/bold magenta] {prompt}")
-    
+
     try:
         builder = GraphBuilder()
         graph = builder.load_graph()
@@ -233,13 +234,54 @@ def query(prompt: str = typer.Argument(..., help="Query to run against the knowl
     console.print(f"Found {len(start_nodes)} seed nodes. Traversing graph...")
     retriever = GraphRetriever(graph)
     subgraph = retriever.retrieve_context(start_nodes, max_hops=1)
-    
+
     markdown_context = retriever.format_as_markdown(subgraph)
-    
+
     console.print("\n[bold cyan]--- Retrieved Context ---[/bold cyan]\n")
     console.print(markdown_context)
     console.print("\n[bold cyan]--- End Context ---[/bold cyan]\n")
+
+    # Token efficiency dashboard
+    source_files = retriever.get_source_files(subgraph)
+    np_tokens, exact = count_tokens(markdown_context)
+    naive_text = naive_rag_text(source_files)
+    naive_tokens, _ = count_tokens(naive_text)
+    console.print(render_savings_panel(np_tokens, naive_tokens, exact, file_count=len(source_files)))
+
     console.print("Query complete.")
+
+
+@app.command()
+def visualize(
+    output: str = typer.Option(".nervapack/graph.html", help="Output HTML file path"),
+    no_browser: bool = typer.Option(False, "--no-browser", help="Don't open browser automatically"),
+):
+    """
+    Render the knowledge graph as an interactive HTML visualization.
+    """
+    import webbrowser
+    import os
+    from nervapack.graph.builder import GraphBuilder
+    from nervapack.graph.visualizer import export_html
+
+    try:
+        builder = GraphBuilder()
+        graph = builder.load_graph()
+    except Exception as e:
+        console.print(f"[bold red]No graph found:[/bold red] {e}. Run 'nervapack ingest' first.")
+        raise typer.Exit(1)
+
+    node_count = graph.number_of_nodes()
+    edge_count = graph.number_of_edges()
+    console.print(f"[bold blue]Rendering graph[/bold blue] ({node_count} nodes, {edge_count} edges)...")
+
+    export_html(graph, output)
+    abs_path = os.path.abspath(output)
+    console.print(f"[bold green]Visualization saved:[/bold green] {abs_path}")
+
+    if not no_browser:
+        webbrowser.open(f"file://{abs_path}")
+        console.print("[dim]Opened in browser.[/dim]")
 
 @app.command()
 def status():
