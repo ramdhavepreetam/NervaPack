@@ -95,7 +95,10 @@ def sync(path: str = typer.Argument(".", help="Path to the repository to sync"))
     from nervapack.graph.vector_store import VectorStore
     from nervapack.parser.ast_parser import ASTParser
     from nervapack.parser.md_chunker import MarkdownChunker
+    from nervapack.parser.language_registry import LANGUAGE_REGISTRY
     import os
+
+    _CODE_EXTS = tuple(LANGUAGE_REGISTRY.keys())
 
     console.print("[bold blue]Syncing changed files with NervaPack graph...[/bold blue]")
     
@@ -146,7 +149,7 @@ def sync(path: str = typer.Argument(".", help="Path to the repository to sync"))
             continue
             
         # 2. Re-parse and insert
-        if file_path.endswith(('.py', '.js', '.jsx', '.ts', '.tsx')):
+        if file_path.endswith(_CODE_EXTS):
             entities = ast_parser.parse_file(file_path)
             
             # Add to graph

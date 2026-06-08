@@ -39,6 +39,24 @@ dependencies = [
     "chromadb>=0.4.24"
 ]
 
+[project.optional-dependencies]
+go     = ["tree-sitter-go>=0.21.0"]
+rust   = ["tree-sitter-rust>=0.21.0"]
+java   = ["tree-sitter-java>=0.21.0"]
+c      = ["tree-sitter-c>=0.21.0"]
+cpp    = ["tree-sitter-cpp>=0.21.0"]
+ruby   = ["tree-sitter-ruby>=0.21.0"]
+csharp = ["tree-sitter-c-sharp>=0.21.0"]
+all-languages = [
+    "tree-sitter-go>=0.21.0",
+    "tree-sitter-rust>=0.21.0",
+    "tree-sitter-java>=0.21.0",
+    "tree-sitter-c>=0.21.0",
+    "tree-sitter-cpp>=0.21.0",
+    "tree-sitter-ruby>=0.21.0",
+    "tree-sitter-c-sharp>=0.21.0",
+]
+
 [project.urls]
 Homepage = "https://github.com/ramdhavepreetam/NervaPack"
 Repository = "https://github.com/ramdhavepreetam/NervaPack"
