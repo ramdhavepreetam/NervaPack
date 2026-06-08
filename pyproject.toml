@@ -41,6 +41,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+mcp     = ["mcp[cli]>=1.0.0"]
 metrics = ["tiktoken>=0.5.0"]
 go     = ["tree-sitter-go>=0.21.0"]
 rust   = ["tree-sitter-rust>=0.21.0"]
@@ -66,4 +67,5 @@ Repository = "https://github.com/ramdhavepreetam/NervaPack"
 Documentation = "https://github.com/ramdhavepreetam/NervaPack#readme"
 
 [project.scripts]
-nervapack = "nervapack.cli:app"
+nervapack     = "nervapack.cli:app"
+nervapack-mcp = "nervapack.mcp_server:main"

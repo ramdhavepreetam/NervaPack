@@ -62,6 +62,11 @@ pip install nervapack
 pip install "nervapack[metrics]"   # adds tiktoken for precise token counts
 ```
 
+**With MCP server (for Claude Code / Cursor / any MCP-compatible tool):**
+```bash
+pip install "nervapack[mcp]"
+```
+
 > On first run, `chromadb` downloads `onnxruntime` embedding models to your cache and `tree-sitter` compiles its language bindings. This is a one-time setup (~1–2 min).
 
 ---
@@ -280,6 +285,83 @@ NervaPack is 100% offline. No code, documentation, or query ever leaves your mac
 - All graph and vector data is stored in `.nervapack/` inside your project.
 
 Add `.nervapack/` to your `.gitignore` to keep it out of version control.
+
+---
+
+## Using NervaPack in LLM Developer Tools
+
+NervaPack ships a built-in MCP server, so any MCP-compatible tool (Claude Code, Cursor, etc.) can use it as a native context provider — no custom code required.
+
+### Setup (one-time per project)
+
+**1. Install the MCP extra:**
+```bash
+pip install "nervapack[mcp]"
+```
+
+**2. Build the graph:**
+```bash
+nervapack ingest .
+```
+
+**3. Add `.mcp.json` to your project root:**
+```json
+{
+  "mcpServers": {
+    "nervapack": {
+      "command": "nervapack-mcp",
+      "description": "NervaPack knowledge graph — query_codebase, graph_status, list_entities"
+    }
+  }
+}
+```
+
+That's it. Reload your MCP-compatible tool and NervaPack's tools appear automatically.
+
+### Tools exposed
+
+| Tool | What it does |
+|---|---|
+| `query_codebase(prompt, max_hops?)` | Vector search → K-Hop BFS → focused Markdown context + token savings summary |
+| `graph_status()` | Node/edge counts by type, language breakdown, unsynced file warnings |
+| `list_entities(entity_type?, file_path?)` | Browse all indexed classes, functions, imports, markdown docs |
+
+### How Claude Code uses it
+
+Once `.mcp.json` is in place, Claude Code automatically calls `query_codebase` before answering questions about the codebase. Instead of reading whole files, it gets a surgical subgraph of only the relevant code — the same token savings you see in the CLI dashboard, applied to every single response.
+
+```
+You:     "How does the sync command decide which files to re-ingest?"
+Claude:  → calls query_codebase("sync command file re-ingest logic")
+         → gets 1,180 tokens of focused context (vs 12,840 tokens naive)
+         → answers precisely, citing exact line numbers
+```
+
+### Keeping the graph fresh
+
+```bash
+# After modifying files
+nervapack sync .
+
+# Check if Claude's context is stale
+# (graph_status tool reports this automatically)
+```
+
+### Python SDK (for building your own tool)
+
+```python
+from nervapack.graph.builder import GraphBuilder
+from nervapack.graph.vector_store import VectorStore
+from nervapack.graph.retrieval import GraphRetriever
+
+graph = GraphBuilder().load_graph()
+retriever = GraphRetriever(graph)
+results = VectorStore().search("your query", n_results=3)
+start_nodes = results["ids"][0]
+subgraph = retriever.retrieve_context(start_nodes, max_hops=1)
+context = retriever.format_as_markdown(subgraph)
+# Inject context into your LLM system prompt
+```
 
 ---
 
