@@ -1,4 +1,4 @@
-# NervaPack
+ye# NervaPack
 
 [![PyPI version](https://img.shields.io/pypi/v/nervapack.svg)](https://pypi.org/project/nervapack/)
 [![Python Versions](https://img.shields.io/pypi/pyversions/nervapack.svg)](https://pypi.org/project/nervapack/)
@@ -57,14 +57,12 @@ pipx install nervapack
 pip install nervapack
 ```
 
-**With exact token counting:**
+**With optional features:**
 ```bash
-pip install "nervapack[metrics]"   # adds tiktoken for precise token counts
-```
-
-**With MCP server (for Claude Code / Cursor / any MCP-compatible tool):**
-```bash
-pip install "nervapack[mcp]"
+pip install "nervapack[metrics]"    # exact token counting (tiktoken)
+pip install "nervapack[dashboard]"  # web dashboard (streamlit + plotly)
+pip install "nervapack[mcp]"        # MCP server for Claude Code/Cursor
+pip install "nervapack[metrics,dashboard,mcp]"  # all features
 ```
 
 > On first run, `chromadb` downloads `onnxruntime` embedding models to your cache and `tree-sitter` compiles its language bindings. This is a one-time setup (~1–2 min).
@@ -82,14 +80,17 @@ nervapack ingest .
 # 2. Query for context — see focused results + token savings dashboard
 nervapack query "How does authentication work?"
 
-# 3. Visualize the graph in your browser
-nervapack visualize
+# 3. Visualize the graph with search and community detection
+nervapack visualize --enhanced --communities
 
-# 4. After modifying files, sync the graph incrementally
+# 4. Launch interactive web dashboard
+nervapack serve
+
+# 5. After modifying files, sync the graph incrementally
 nervapack sync .
 
-# 5. Check graph health
-nervapack status
+# 6. Check detailed graph health and analytics
+nervapack status --detailed
 ```
 
 ---
@@ -166,24 +167,140 @@ The context output is designed to be pasted directly into an LLM prompt.
 
 ---
 
-### `nervapack visualize`
+### `nervapack visualize [--enhanced] [--communities]`
 
 Renders the knowledge graph as an **interactive HTML file** and opens it in your browser.
 
+**Basic usage:**
 ```bash
 nervapack visualize                          # saves to .nervapack/graph.html
 nervapack visualize --output ~/my-graph.html # custom output path
 nervapack visualize --no-browser             # generate without opening
 ```
 
+**Enhanced mode (recommended):**
+```bash
+nervapack visualize --enhanced               # adds real-time search
+nervapack visualize --enhanced --communities # + community detection
+```
+
+**Enhanced features:**
+- **Real-time search** — Filter nodes by typing (instant, client-side)
+- **Path finder** — Click two nodes to find and highlight shortest path
+- **Community detection** — Color-coded modules using Louvain algorithm
+- **Visual highlighting** — Matched nodes enlarged, non-matched dimmed
+
 What the visualization shows:
 - **Node shapes:** diamonds = files, dots = all other entities
-- **Node colors:** blue = file, green = function, amber = class, gray = import, lavender = markdown
+- **Node colors:** blue = file, green = function, amber = class, gray = import, lavender = markdown (or community colors)
 - **Edge styles:** solid = `DEFINES`, dashed = `EXPLAINS`
 - **Hover tooltips:** type, name, file, line range, and a code preview
 - **Interactive:** drag, zoom, click — spring-force physics layout
 
 The graph is a static HTML file with no external dependencies — share it, open it offline, or embed it in docs.
+
+---
+
+### `nervapack explore <target> [--hops N]`
+
+Extract and visualize a focused subgraph around a specific file, class, or function. Perfect for understanding a specific part of your codebase without the noise of the full graph.
+
+```bash
+nervapack explore GraphBuilder --hops 2     # explore 2-hop neighborhood
+nervapack explore src/cli.py --hops 1       # file-based exploration
+nervapack explore "function:parse"          # partial name matching
+```
+
+**How it works:**
+1. Searches for nodes matching the target (by file path, name, or node ID)
+2. Performs multi-source BFS to extract N-hop neighborhood
+3. Generates enhanced visualization with search enabled
+
+**Use cases:**
+- Understanding class relationships
+- Finding related code quickly
+- Impact analysis before refactoring
+- Onboarding to specific modules
+
+---
+
+### `nervapack dependencies [file]`
+
+Analyze file-level import dependencies, detect circular dependencies, and visualize the dependency graph.
+
+**Overall analysis:**
+```bash
+nervapack dependencies
+```
+
+Shows:
+- Total files and dependency edges
+- Circular dependency detection with cycle visualization
+- Most depended-on files (top 10)
+- Files with most dependencies (top 10)
+- Orphan files (no dependencies)
+- Interactive hierarchical visualization
+
+**Specific file:**
+```bash
+nervapack dependencies src/graph/builder.py
+```
+
+Shows:
+- Files this file imports
+- Files that import this file
+
+**Visualization features:**
+- **Color coding:**
+  - 🔴 Red: Part of circular dependency
+  - 🔵 Cyan: Heavily depended on (>5 dependents)
+  - 🟡 Yellow: Many dependencies (>5 imports)
+  - 🟢 Green: Normal file
+  - ⚫ Gray: Orphan (isolated)
+- **Hierarchical layout** — Topological sort when DAG
+- **Search box** — Filter files by name
+- **Size scaling** — Proportional to total degree
+
+**Example output:**
+```
+╭──────────  Dependency Metrics  ──────────╮
+│ Total Files              │  127          │
+│ Total Dependencies       │  456          │
+│ Max Dependency Depth     │  8            │
+│ Orphan Files             │  3            │
+╰──────────────────────────────────────────╯
+
+⚠ Circular Dependencies Detected: 2 cycle(s)
+
+Cycle 1:
+  auth.py
+  → user.py
+  → session.py
+  → auth.py (back to start)
+```
+
+---
+
+### `nervapack serve [--port N]`
+
+Launch an interactive **web dashboard** with real-time analytics, visualizations, and graph exploration. Requires `nervapack[dashboard]`.
+
+```bash
+nervapack serve                  # launches on http://localhost:8501
+nervapack serve --port 8080      # custom port
+nervapack serve --no-browser     # don't auto-open browser
+```
+
+**Dashboard features:**
+- **Overview tab** — Health score, language distribution, top files
+- **Analytics tab** — Node/edge type breakdown, degree distribution
+- **Query History tab** — Trends, cost savings, keyword frequency
+- **Graph Explorer tab** — Real-time search, statistics
+
+**Performance:**
+- Initial load: <2 seconds
+- Subsequent loads: <200ms (cached)
+- Real-time filtering and charts
 
 ---
 
@@ -200,9 +317,61 @@ A full `ingest` on a large codebase can take minutes. `sync` turns that into a 2
 
 ---
 
-### `nervapack status`
+### `nervapack status [--detailed]`
 
 Prints the current state of the graph: node count, edge count, and any files that are out of sync with the graph.
+
+**Enhanced with `--detailed` flag:**
+```bash
+nervapack status --detailed
+```
+
+Shows comprehensive analytics:
+- **Health score** (0-100) based on documentation coverage, connectivity, and graph density
+- **Language distribution** with visual bars
+- **Most connected files** (top 10 by degree)
+- **Documentation coverage** percentage
+- **Git sync status** with warnings for unsynced files
+
+**Example output:**
+```
+╭──────────── NervaPack Status ────────────────╮
+│ Graph Health Score: 85/100 ●●●●●●●●○○        │
+│                                              │
+│ 📊 Overview                                  │
+│   Nodes:      1,247                          │
+│   Edges:      3,821                          │
+│   Files:        156                          │
+│   Functions:    892                          │
+│                                              │
+│ 📚 Language Distribution                     │
+│   Python      ████████████░░░░  62.5%  (98)  │
+│   TypeScript  ██████░░░░░░░░░░  35.2%  (55)  │
+│                                              │
+│ 📖 Documentation Coverage                    │
+│   ████████████░░░░░  67.8% (845/1247)        │
+╰──────────────────────────────────────────────╯
+```
+
+---
+
+### `nervapack history [--stats] [--limit N] [--clear]`
+
+View query history and analytics. All queries are automatically saved to `.nervapack/query_history.jsonl`.
+
+```bash
+nervapack history              # show last 10 queries
+nervapack history --limit 20   # show last 20
+nervapack history --stats      # aggregate statistics
+nervapack history --clear      # clear all history
+```
+
+**Statistics include:**
+- Total queries run
+- Average token savings percentage
+- Total tokens saved across all queries
+- Cost savings (GPT-4o and Claude Sonnet pricing)
+- Most frequently queried topics (word frequency analysis)
 
 ---
 
@@ -270,9 +439,15 @@ nervapack visualize
 | `nervapack.graph.vector_store` | ChromaDB ingest and semantic search |
 | `nervapack.graph.retrieval` | K-Hop BFS context extraction |
 | `nervapack.graph.visualizer` | pyvis interactive HTML export |
+| `nervapack.graph.visualizer_v2` | Enhanced visualizer with search, communities, path finding |
+| `nervapack.graph.dependency_analyzer` | File-level dependency analysis and cycle detection |
+| `nervapack.graph.analytics` | Health scoring, language distribution, coverage metrics |
+| `nervapack.graph.query_history` | Query tracking and aggregate analytics |
 | `nervapack.graph.token_meter` | Token counting and savings panel |
+| `nervapack.dashboard.app` | Streamlit web dashboard with interactive charts |
 | `nervapack.llm.summarizer` | Local Ollama interface for LLM binding |
 | `nervapack.git.tracker` | GitPython diff for incremental sync |
+| `nervapack.mcp_server` | MCP server for Claude Code/Cursor integration |
 
 ---
 

@@ -43,6 +43,7 @@ dependencies = [
 [project.optional-dependencies]
 mcp     = ["mcp[cli]>=1.0.0"]
 metrics = ["tiktoken>=0.5.0"]
+dashboard = ["streamlit>=1.29.0", "plotly>=5.18.0"]
 go     = ["tree-sitter-go>=0.21.0"]
 rust   = ["tree-sitter-rust>=0.21.0"]
 java   = ["tree-sitter-java>=0.21.0"]

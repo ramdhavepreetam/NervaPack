@@ -1,40 +1,78 @@
 import networkx as nx
-from typing import List, Set, Dict, Tuple
+from typing import List, Set, Dict, Tuple, Optional
+from dataclasses import dataclass
+
+
+@dataclass
+class RetrievalMetadata:
+    """Metadata about the graph traversal process."""
+    seed_nodes: List[str]
+    expanded_nodes: List[str]
+    total_nodes: int
+    traversal_depth: int
+    edges_followed: List[Tuple[str, str, str]]  # (source, target, relation)
+
 
 class GraphRetriever:
     def __init__(self, graph: nx.DiGraph):
         self.graph = graph
+        self.last_metadata: Optional[RetrievalMetadata] = None
 
     def retrieve_context(self, start_node_ids: List[str], max_hops: int = 2) -> nx.DiGraph:
         """
         Retrieves a sub-graph using K-Hop BFS from the given start nodes.
         Uses Betweenness Centrality to prune high-degree "hub" nodes if necessary.
+
+        Also tracks metadata about the traversal which can be accessed via self.last_metadata.
         """
         visited = set()
         queue = [(node_id, 0) for node_id in start_node_ids if self.graph.has_node(node_id)]
-        
+
         subgraph_nodes = set()
+        seed_nodes = [nid for nid in start_node_ids if self.graph.has_node(nid)]
+        expanded_nodes = []
+        edges_followed = []
+        max_depth_reached = 0
 
         while queue:
             current_node, hops = queue.pop(0)
-            
+
             if current_node in visited:
                 continue
-                
+
             visited.add(current_node)
             subgraph_nodes.add(current_node)
+            max_depth_reached = max(max_depth_reached, hops)
+
+            # Track if this was expanded from a seed
+            if current_node not in seed_nodes:
+                expanded_nodes.append(current_node)
 
             if hops < max_hops:
                 for neighbor in self.graph.neighbors(current_node):
                     if neighbor not in visited:
-                        # Pruning logic: If degree is extremely high, it might be a utility file/hub.
-                        # For now, we skip pruning if it's within hops, but this is where betweenness centrality could be applied.
+                        # Track edge traversal
+                        edge_data = self.graph.get_edge_data(current_node, neighbor)
+                        relation = edge_data.get("relation", "unknown") if edge_data else "unknown"
+                        edges_followed.append((current_node, neighbor, relation))
                         queue.append((neighbor, hops + 1))
-                
+
                 # Also traverse incoming edges
                 for predecessor in self.graph.predecessors(current_node):
                     if predecessor not in visited:
+                        edge_data = self.graph.get_edge_data(predecessor, current_node)
+                        relation = edge_data.get("relation", "unknown") if edge_data else "unknown"
+                        edges_followed.append((predecessor, current_node, relation))
                         queue.append((predecessor, hops + 1))
+
+        # Store metadata
+        self.last_metadata = RetrievalMetadata(
+            seed_nodes=seed_nodes,
+            expanded_nodes=expanded_nodes,
+            total_nodes=len(subgraph_nodes),
+            traversal_depth=max_depth_reached,
+            edges_followed=edges_followed,
+        )
 
         return self.graph.subgraph(subgraph_nodes).copy()
 
