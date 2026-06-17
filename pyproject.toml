@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nervapack"
-version = "0.3.1"
+version = "0.4.0"
 description = "Privacy-first, offline knowledge graph for developers"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -41,9 +41,17 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Core features
 mcp     = ["mcp[cli]>=1.0.0"]
 metrics = ["tiktoken>=0.5.0"]
 dashboard = ["streamlit>=1.29.0", "plotly>=5.18.0"]
+
+# Cloud LLM providers (alternatives to Ollama)
+claude  = ["anthropic>=0.18.0"]
+openai  = ["openai>=1.12.0"]
+cloud-llm = ["anthropic>=0.18.0", "openai>=1.12.0"]
+
+# Additional languages
 go     = ["tree-sitter-go>=0.21.0"]
 rust   = ["tree-sitter-rust>=0.21.0"]
 java   = ["tree-sitter-java>=0.21.0"]
@@ -59,6 +67,16 @@ all-languages = [
     "tree-sitter-cpp>=0.21.0",
     "tree-sitter-ruby>=0.21.0",
     "tree-sitter-c-sharp>=0.21.0",
+]
+
+# All features
+all = [
+    "mcp[cli]>=1.0.0",
+    "tiktoken>=0.5.0",
+    "streamlit>=1.29.0",
+    "plotly>=5.18.0",
+    "anthropic>=0.18.0",
+    "openai>=1.12.0",
 ]
 
 [project.urls]

@@ -15,15 +15,34 @@ def init():
     console.print("Initialization complete.")
 
 @app.command()
-def ingest(path: str = typer.Argument(".", help="Path to the repository to ingest")):
+def ingest(
+    path: str = typer.Argument(".", help="Path to the repository to ingest"),
+    llm: str = typer.Option(None, help="LLM provider (ollama, claude, openai, mcp). Auto-detects if not specified."),
+    model: str = typer.Option(None, help="Model name (provider-specific)"),
+    api_key: str = typer.Option(None, help="API key for cloud providers"),
+):
     """
     Ingest a repository, building the AST and Vector graph.
+
+    LLM Providers:
+      ollama     - Local Ollama (privacy-first, free)
+      claude     - Claude API (requires ANTHROPIC_API_KEY)
+      openai     - OpenAI API (requires OPENAI_API_KEY)
+      mcp        - MCP delegation (auto-used in Claude Code/Cursor)
+
+    Examples:
+      nervapack ingest .                           # Auto-detect provider
+      nervapack ingest . --llm ollama              # Force Ollama
+      nervapack ingest . --llm claude              # Use Claude API
+      nervapack ingest . --llm openai --model gpt-4o-mini
     """
     from nervapack.parser.ast_parser import scan_directory
     from nervapack.graph.builder import GraphBuilder
+    from nervapack.llm.factory import get_llm_provider
+    from rich.prompt import Confirm
 
     console.print(f"[bold blue]Ingesting repository at {path}...[/bold blue]")
-    
+
     console.print("Scanning directory for code entities...")
     entities = scan_directory(path)
     console.print(f"Found {len(entities)} AST entities.")
@@ -33,12 +52,12 @@ def ingest(path: str = typer.Argument(".", help="Path to the repository to inges
     graph = builder.build_from_entities(entities)
     builder.save_graph()
     console.print(f"Graph saved with {graph.number_of_nodes()} nodes and {graph.number_of_edges()} edges.")
-    
+
     console.print("Ingesting AST nodes into Vector Store...")
     try:
         from nervapack.graph.vector_store import VectorStore
         vstore = VectorStore()
-        
+
         # We'll just ingest them with basic code text for now (in production, LLMSummarizer would summarize them first)
         ast_docs = []
         for e in entities:
@@ -49,7 +68,7 @@ def ingest(path: str = typer.Argument(".", help="Path to the repository to inges
                 "summary": f"This is a {e.type} named {e.name} in {e.file_path}. Code:\n{e.content}",
                 "file_path": e.file_path
             })
-        
+
         vstore.ingest_ast_entities(ast_docs)
         console.print("AST Vector ingestion complete.")
 
@@ -57,27 +76,67 @@ def ingest(path: str = typer.Argument(".", help="Path to the repository to inges
         console.print("Scanning directory for Markdown docs...")
         md_chunks = scan_markdown_directory(path)
         console.print(f"Found {len(md_chunks)} Markdown chunks.")
-        
+
         if md_chunks:
             # Ingest to vector store
             vstore.ingest_chunks(md_chunks)
-            
-            # Add to graph and Bind with LLM
+
+            # Get LLM provider
+            console.print("\n[bold cyan]Setting up LLM provider...[/bold cyan]")
+            try:
+                provider = get_llm_provider(
+                    provider=llm,
+                    model=model,
+                    api_key=api_key
+                )
+                provider_name = provider.get_provider_name()
+                console.print(f"Using LLM provider: [green]{provider_name}[/green]")
+
+                # Validate configuration
+                if not provider.validate_config():
+                    console.print("[bold red]Provider configuration invalid![/bold red]")
+                    if "ollama" in provider_name:
+                        console.print("Make sure Ollama is running: [cyan]ollama serve[/cyan]")
+                    elif "claude" in provider_name:
+                        console.print("Set your API key: [cyan]export ANTHROPIC_API_KEY=sk-ant-...[/cyan]")
+                    elif "openai" in provider_name:
+                        console.print("Set your API key: [cyan]export OPENAI_API_KEY=sk-...[/cyan]")
+                    raise typer.Exit(1)
+
+                # Show cost estimate for cloud providers
+                estimated_cost = provider.estimate_cost(len(md_chunks))
+                if estimated_cost is not None and estimated_cost > 0:
+                    console.print(f"\n[bold yellow]💰 Cost Estimate[/bold yellow]")
+                    console.print(f"Provider: {provider_name}")
+                    console.print(f"Markdown chunks to bind: {len(md_chunks)}")
+                    console.print(f"Estimated cost: [yellow]${estimated_cost:.2f}[/yellow]")
+                    console.print(f"(Actual cost may vary based on content length)\n")
+
+                    # Ask for confirmation
+                    if not Confirm.ask("Proceed with cloud LLM binding?"):
+                        console.print("[yellow]Binding cancelled. Graph created but docs not linked.[/yellow]")
+                        raise typer.Exit(0)
+
+            except ValueError as e:
+                console.print(f"[bold red]LLM provider error:[/bold red] {e}")
+                raise typer.Exit(1)
+
+            # Wrap provider in LLMSummarizer for backwards compat
             from nervapack.llm.summarizer import LLMSummarizer
-            llm = LLMSummarizer()
-            
+            llm_summarizer = LLMSummarizer(provider=llm, model_name=model or "llama3", api_key=api_key)
+
             console.print("Binding documentation to AST (this may take a while)...")
             for i, chunk in enumerate(md_chunks):
                 md_node_id = f"md_{chunk['file_path']}_{i}"
                 if not graph.has_node(md_node_id):
                     graph.add_node(md_node_id, type="markdown", header=chunk['header'], content=chunk['content'], file_path=chunk['file_path'])
-                
+
                 # Try to bind
-                matched_ids = llm.bind_docs_to_ast(chunk['content'], ast_docs)
+                matched_ids = llm_summarizer.bind_docs_to_ast(chunk['content'], ast_docs)
                 for matched_id in matched_ids:
                     if graph.has_node(matched_id):
                         graph.add_edge(md_node_id, matched_id, relation="EXPLAINS")
-            
+
             builder.save_graph()
             console.print("Semantic binding complete.")
 

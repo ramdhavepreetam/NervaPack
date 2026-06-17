@@ -30,12 +30,15 @@ NervaPack runs 100% on your machine. It uses `tree-sitter` to parse your codebas
 ## Prerequisites
 
 - **Python 3.10+**
-- **Ollama** — install from [ollama.com](https://ollama.com/), then pull a model:
-  ```bash
-  ollama pull llama3
-  ```
-  NervaPack defaults to `llama3`. Any model that can follow instructions works.
-- **Git** — your project must be a git repository (`git init` if not).
+- **Git** — your project must be a git repository (`git init` if not)
+- **LLM Provider** (choose one):
+  - **Ollama** (local, privacy-first) — install from [ollama.com](https://ollama.com/), then pull a model:
+    ```bash
+    ollama pull llama3
+    ```
+  - **Claude API** (cloud, no local setup) — get API key from [console.anthropic.com](https://console.anthropic.com/)
+  - **OpenAI API** (cloud, widely available) — get API key from [platform.openai.com](https://platform.openai.com/api-keys)
+  - **Claude Code/Cursor** (MCP integration) — uses your existing Claude session, zero config!
 
 ---
 
@@ -62,10 +65,117 @@ pip install nervapack
 pip install "nervapack[metrics]"    # exact token counting (tiktoken)
 pip install "nervapack[dashboard]"  # web dashboard (streamlit + plotly)
 pip install "nervapack[mcp]"        # MCP server for Claude Code/Cursor
-pip install "nervapack[metrics,dashboard,mcp]"  # all features
+pip install "nervapack[claude]"     # Claude API support (cloud LLM)
+pip install "nervapack[openai]"     # OpenAI API support (cloud LLM)
+pip install "nervapack[cloud-llm]"  # Both Claude + OpenAI
+pip install "nervapack[all]"        # All features
 ```
 
 > On first run, `chromadb` downloads `onnxruntime` embedding models to your cache and `tree-sitter` compiles its language bindings. This is a one-time setup (~1–2 min).
+
+---
+
+## LLM Provider Options
+
+NervaPack supports multiple LLM providers for document-to-code binding. Choose based on your priorities:
+
+### Option 1: Ollama (Default — Privacy-First, Free)
+
+**Best for:** Privacy-conscious users, offline work, no recurring costs
+
+```bash
+# One-time setup
+brew install ollama
+ollama pull llama3
+ollama serve
+
+# Use NervaPack (auto-detects Ollama)
+nervapack ingest .
+```
+
+**Pros:** ✅ Free, ✅ 100% private, ✅ Works offline
+**Cons:** ❌ ~4GB download, ❌ Uses local resources
+
+---
+
+### Option 2: Claude API (Cloud — Fast, High Quality)
+
+**Best for:** Users who want best results without local setup
+
+```bash
+# Install Claude support
+pip install "nervapack[claude]"
+
+# Get API key from https://console.anthropic.com
+export ANTHROPIC_API_KEY=sk-ant-...
+
+# Use NervaPack with Claude
+nervapack ingest . --llm claude
+```
+
+**Cost estimate:** ~$0.25 per 1000 binding calls (Haiku model)
+**Pros:** ✅ No local install, ✅ High quality, ✅ Fast
+**Cons:** ❌ Sends code to cloud, ❌ Costs money
+
+**Available models:**
+- `claude-3-haiku-20240307` (fastest, cheapest — default)
+- `claude-3-5-sonnet-20241022` (best quality, higher cost)
+
+---
+
+### Option 3: OpenAI API (Cloud — Widely Available)
+
+**Best for:** Users with existing OpenAI accounts
+
+```bash
+# Install OpenAI support
+pip install "nervapack[openai]"
+
+# Get API key from https://platform.openai.com/api-keys
+export OPENAI_API_KEY=sk-...
+
+# Use NervaPack with OpenAI
+nervapack ingest . --llm openai
+```
+
+**Cost estimate:** ~$0.15 per 1000 binding calls (GPT-4o-mini)
+**Pros:** ✅ Widely available, ✅ Good quality
+**Cons:** ❌ Sends code to cloud, ❌ Costs money
+
+**Available models:**
+- `gpt-4o-mini` (cheapest, good quality — default)
+- `gpt-4o` (best quality, higher cost)
+
+---
+
+### Option 4: MCP Delegation (Claude Code/Cursor)
+
+**Best for:** Users already in Claude Code or Cursor
+
+```bash
+# Zero setup needed!
+# If using NervaPack through Claude Code:
+nervapack ingest .
+# → Auto-detects MCP context
+# → Uses your existing Claude session
+# → No separate API key needed
+```
+
+**Pros:** ✅ Zero config, ✅ Uses existing auth, ✅ No extra cost
+**Cons:** ⚠️ Only works in MCP-compatible tools
+
+---
+
+### Privacy & Cost Comparison
+
+| Provider | Privacy | Setup | Cost (1000 calls) | Use Case |
+|----------|---------|-------|-------------------|----------|
+| **Ollama** | 🔒 100% Local | Medium | Free | Privacy-first |
+| **Claude API** | ☁️ Cloud | Easy | ~$0.25 | Quality + convenience |
+| **OpenAI API** | ☁️ Cloud | Easy | ~$0.15 | Existing OpenAI users |
+| **MCP Delegation** | ☁️ Cloud* | Zero | Included | Claude Code users |
+
+*Uses Claude through your existing subscription
 
 ---
 
