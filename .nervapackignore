@@ -1,0 +1,16 @@
+# Ignore minified JavaScript libraries
+lib/
+*.min.js
+
+# Ignore build artifacts
+dist/
+build/
+*.egg-info/
+
+# Ignore Python cache
+__pycache__/
+*.pyc
+
+# Ignore test files
+tests/
+test_*/

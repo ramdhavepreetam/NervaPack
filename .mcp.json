@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "nervapack": {
+      "command": "nervapack-mcp",
+      "description": "NervaPack knowledge graph — query_codebase, graph_status, list_entities"
+    }
+  }
+}
