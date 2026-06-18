@@ -160,8 +160,8 @@ def export_html_enhanced(
         directed=True,
         bgcolor="#0f0f1a",
         font_color="#e0e0e0",
-        select_menu=True,
-        filter_menu=True,
+        select_menu=False,  # Disabled - using custom search instead
+        filter_menu=False,  # Disabled - using custom search instead
     )
 
     net.set_options(json.dumps({
@@ -308,7 +308,7 @@ def _build_enhanced_ui(enable_search: bool, enable_community: bool, num_communit
 </div>
 
 <script>
-let network;  // Will be set by vis.js
+// network variable is already declared by pyvis above
 
 function searchNodes(event) {
   const searchTerm = document.getElementById('search-input').value.toLowerCase();
@@ -420,8 +420,15 @@ document.addEventListener('DOMContentLoaded', function() {
 let originalNodeColors = {};
 let originalEdgeColors = {};
 
-// Click handler to select nodes for path finding
-network.on("click", function(params) {
+// Wait for network to be initialized before attaching handlers
+function initPathFinder() {
+  if (typeof network === 'undefined' || !network) {
+    setTimeout(initPathFinder, 100);
+    return;
+  }
+
+  // Click handler to select nodes for path finding
+  network.on("click", function(params) {
   if (params.nodes.length > 0) {
     const nodeId = params.nodes[0];
     const sourceInput = document.getElementById('path-source');
@@ -585,9 +592,172 @@ function clearPath() {
 
   network.fit();
 }
+}
+
+// Initialize path finder when page loads
+initPathFinder();
 </script>
 """
         components.append(path_finder_html)
+
+    # Node list panel
+    node_list_html = """
+<div id="np-node-list" style="
+    position:fixed; top:80px; left:12px; z-index:9998;
+    background:rgba(15,15,26,0.95); border:1px solid #333366;
+    border-radius:8px; padding:12px; font-family:monospace;
+    max-height:calc(100vh - 100px); width:280px;
+    display:none;">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+    <div style="font-weight:bold; color:#8888ff;">📋 Node List</div>
+    <button onclick="toggleNodeList()" style="
+      background:#444; border:none; border-radius:4px;
+      padding:2px 8px; color:#e0e0e0; font-size:10px; cursor:pointer;">✕</button>
+  </div>
+  <input type="text" id="node-list-filter" placeholder="Filter nodes..." style="
+    background:#1a1a2e; border:1px solid #444; border-radius:4px;
+    padding:4px 8px; color:#e0e0e0; font-size:11px; width:100%; margin-bottom:8px;"
+    onkeyup="filterNodeList()">
+  <div id="node-list-content" style="
+    overflow-y:auto; max-height:calc(100vh - 200px); font-size:11px;">
+    <div style="color:#888; text-align:center; padding:20px;">Loading nodes...</div>
+  </div>
+</div>
+
+<button id="toggle-node-list-btn" onclick="toggleNodeList()" style="
+    position:fixed; top:80px; left:12px; z-index:9998;
+    background:rgba(15,15,26,0.92); border:1px solid #333366;
+    border-radius:8px; padding:8px 12px; font-family:monospace;
+    color:#8888ff; font-size:11px; cursor:pointer; font-weight:bold;">
+  📋 Show Nodes
+</button>
+
+<script>
+function toggleNodeList() {
+  const panel = document.getElementById('np-node-list');
+  const btn = document.getElementById('toggle-node-list-btn');
+  if (panel.style.display === 'none') {
+    panel.style.display = 'block';
+    btn.style.display = 'none';
+    if (!window.nodeListPopulated) {
+      populateNodeList();
+    }
+  } else {
+    panel.style.display = 'none';
+    btn.style.display = 'block';
+  }
+}
+
+function populateNodeList() {
+  if (typeof network === 'undefined' || !network) {
+    setTimeout(populateNodeList, 100);
+    return;
+  }
+
+  const allNodes = network.body.data.nodes.get();
+
+  // Group nodes by type
+  const nodesByType = {};
+  allNodes.forEach(node => {
+    const type = node.type || 'unknown';
+    if (!nodesByType[type]) nodesByType[type] = [];
+    nodesByType[type].push(node);
+  });
+
+  // Sort types
+  const sortedTypes = Object.keys(nodesByType).sort();
+
+  // Build HTML
+  let html = '';
+  sortedTypes.forEach(type => {
+    const nodes = nodesByType[type];
+    const color = nodes[0].color?.background || '#888';
+
+    html += `<div class="node-type-group" style="margin-bottom:12px;">
+      <div style="color:#8888ff; font-weight:bold; margin-bottom:4px; font-size:10px; text-transform:uppercase;">
+        <span style="display:inline-block;width:8px;height:8px;background:${color};border-radius:50%;margin-right:4px;"></span>
+        ${type} (${nodes.length})
+      </div>`;
+
+    nodes.slice(0, 50).forEach(node => {  // Limit to 50 per type for performance
+      const label = node.label || node.id;
+      const shortLabel = label.length > 35 ? label.substring(0, 35) + '...' : label;
+      html += `<div class="node-item" data-node-id="${node.id}" data-label="${label.toLowerCase()}"
+        onclick="focusNode('${node.id}')" style="
+        padding:4px 6px; margin:2px 0; background:#1a1a2e; border-radius:4px;
+        cursor:pointer; color:#ccc; transition:all 0.2s;"
+        onmouseover="this.style.background='#2a2a3e'; this.style.color='#fff';"
+        onmouseout="this.style.background='#1a1a2e'; this.style.color='#ccc';">
+        ${shortLabel}
+      </div>`;
+    });
+
+    if (nodes.length > 50) {
+      html += `<div style="color:#666; font-size:10px; padding:4px;">...and ${nodes.length - 50} more</div>`;
+    }
+
+    html += `</div>`;
+  });
+
+  document.getElementById('node-list-content').innerHTML = html;
+  window.nodeListPopulated = true;
+}
+
+function filterNodeList() {
+  const filter = document.getElementById('node-list-filter').value.toLowerCase();
+  const items = document.querySelectorAll('.node-item');
+  const groups = document.querySelectorAll('.node-type-group');
+
+  if (!filter) {
+    items.forEach(item => item.style.display = 'block');
+    groups.forEach(group => group.style.display = 'block');
+    return;
+  }
+
+  groups.forEach(group => {
+    let hasVisibleItems = false;
+    const groupItems = group.querySelectorAll('.node-item');
+    groupItems.forEach(item => {
+      const label = item.getAttribute('data-label');
+      if (label.includes(filter)) {
+        item.style.display = 'block';
+        hasVisibleItems = true;
+      } else {
+        item.style.display = 'none';
+      }
+    });
+    group.style.display = hasVisibleItems ? 'block' : 'none';
+  });
+}
+
+function focusNode(nodeId) {
+  if (typeof network === 'undefined' || !network) return;
+
+  network.focus(nodeId, {
+    scale: 1.5,
+    animation: {
+      duration: 500,
+      easingFunction: 'easeInOutQuad'
+    }
+  });
+
+  // Highlight the node temporarily
+  network.selectNodes([nodeId]);
+  setTimeout(() => {
+    network.unselectAll();
+  }, 2000);
+}
+
+// Initialize node list when network is ready
+setTimeout(() => {
+  if (typeof network !== 'undefined' && network) {
+    // Prepopulate in background for faster first open
+    populateNodeList();
+  }
+}, 2000);
+</script>
+"""
+    components.append(node_list_html)
 
     return "\n".join(components)
 
