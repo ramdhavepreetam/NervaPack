@@ -1,0 +1,19 @@
+# Documentation build requirements for Read the Docs
+
+# MkDocs and Material theme
+mkdocs==1.5.3
+mkdocs-material==9.5.3
+
+# API documentation
+mkdocstrings[python]==0.24.0
+mkdocstrings-python==1.7.5
+
+# Markdown extensions
+pymdown-extensions==10.7
+
+# Additional plugins
+mkdocs-git-revision-date-localized-plugin==1.2.2
+mkdocs-minify-plugin==0.8.0
+
+# Required for mkdocstrings to work
+griffe==0.38.1
