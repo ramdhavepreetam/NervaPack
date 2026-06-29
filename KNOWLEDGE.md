@@ -13,7 +13,7 @@ NervaPack is a **privacy-first, offline knowledge graph for codebases** that sol
 1. **Token Waste** - Chunk-based RAG retrieves entire files when only small sections are relevant, bloating LLM context windows
 2. **Privacy Risk** - Cloud-based embedding APIs leak proprietary code to external services
 
-NervaPack runs 100% locally using tree-sitter AST parsing, ChromaDB for embeddings, Ollama for LLM operations, and NetworkX for graph operations. It achieves **90%+ token reduction** compared to naive file-dumping approaches.
+NervaPack runs 100% locally using tree-sitter AST parsing, ChromaDB for embeddings, Ollama for LLM operations, and NetworkX for graph operations. It achieves **91.2% average token reduction** compared to naive file-dumping approaches ([verified benchmarks](docs/BENCHMARKS.md)).
 
 ---
 
@@ -44,6 +44,8 @@ NervaPack runs 100% locally using tree-sitter AST parsing, ChromaDB for embeddin
   - Exact token counting with tiktoken (optional)
   - Side-by-side comparison: NervaPack vs Naive RAG
   - Cost savings calculations for GPT-4o and Claude Sonnet
+  - **Verified Performance:** 91.2% average reduction across real-world queries
+  - See [BENCHMARKS.md](docs/BENCHMARKS.md) for detailed test results
 
 - **Graph Visualization** (v0.2.0+)
   - Interactive HTML export with physics simulation

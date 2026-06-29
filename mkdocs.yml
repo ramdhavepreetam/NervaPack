@@ -125,6 +125,10 @@ nav:
     - Quick Start: getting-started/quick-start.md
     - LLM Providers: getting-started/llm-providers.md
 
+  - Performance:
+    - Verified Benchmarks: BENCHMARKS.md
+    - Messy Code Performance: MESSY_CODE_PERFORMANCE.md
+
   - User Guide:
     - Core Concepts:
       - Knowledge Graphs: user-guide/concepts/knowledge-graphs.md

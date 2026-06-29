@@ -36,13 +36,13 @@ NervaPack runs 100% on your machine. It uses `tree-sitter` to parse your codebas
 
     [:octicons-arrow-right-24: Learn more](user-guide/concepts/architecture.md)
 
--   :material-speedometer: **90% Token Savings**
+-   :material-speedometer: **91% Token Savings**
 
     ---
 
-    Graph-based retrieval reduces tokens by 90% vs naive RAG. Save on API costs and context window limits.
+    Graph-based retrieval reduces tokens by 91% vs naive RAG. Verified through real-world testing. Save on API costs and context window limits.
 
-    [:octicons-arrow-right-24: Token efficiency](user-guide/concepts/token-efficiency.md)
+    [:octicons-arrow-right-24: Verified benchmarks](BENCHMARKS.md) · [:octicons-arrow-right-24: Token efficiency](user-guide/concepts/token-efficiency.md)
 
 -   :material-offline: **Offline First**
 
@@ -111,6 +111,10 @@ nervapack visualize --enhanced --communities
 │  Cost saved (Claude Sonnet $3/1M): $0.0350 per query      │
 ╰───────────────────────────────────────────────────────────╯
 ```
+
+!!! success "Verified Performance"
+    The 91% token reduction is verified through real-world testing on NervaPack's own codebase.
+    See [detailed benchmarks](BENCHMARKS.md) for test methodology and results.
 
 ---
 
