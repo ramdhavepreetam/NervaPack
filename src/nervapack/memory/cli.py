@@ -52,6 +52,74 @@ def cmd_stats(
             console.print(f"  [{e['id']}] {e['content']} (degree {e.get('degree', 0)})")
 
 
+@app.command("sessions")
+def cmd_sessions(
+    limit: int = typer.Option(50, "--limit", "-l", help="Max sessions to show"),
+    db: Optional[str] = typer.Option(None, "--db"),
+) -> None:
+    """List all sessions, newest first."""
+    store = MemoryStore(db_path=db)
+    sessions = store.list_sessions(limit=limit)
+
+    if not sessions:
+        console.print("[yellow]No sessions found.[/yellow]")
+        return
+
+    from rich.table import Table
+    table = Table(title=f"Sessions ({len(sessions)})")
+    table.add_column("ID", style="dim", no_wrap=True)
+    table.add_column("Content", style="white")
+    table.add_column("Recorded", style="cyan", width=19)
+    table.add_column("Nodes", justify="right", style="green")
+    table.add_column("Status", style="yellow")
+
+    for s in sessions:
+        status = "tombstoned" if s["tombstoned"] else ("closed" if s["valid_until"] else "open")
+        table.add_row(
+            s["id"],
+            s["content"] or "",
+            (s["recorded_at"] or "")[:19],
+            str(s["node_count"]),
+            status,
+        )
+    console.print(table)
+
+
+@app.command("delete-session")
+def cmd_delete_session(
+    session_id: str = typer.Argument(..., help="Session ID to delete (s_...)"),
+    purge: bool = typer.Option(False, "--purge", help="Hard-delete instead of tombstone (irreversible)"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
+    db: Optional[str] = typer.Option(None, "--db"),
+) -> None:
+    """Delete a session and all its nodes (tombstone by default, --purge for hard delete)."""
+    store = MemoryStore(db_path=db)
+
+    # Show what will be deleted
+    sessions = [s for s in store.list_sessions(limit=200) if s["id"] == session_id]
+    if not sessions:
+        console.print(f"[red]Session {session_id!r} not found.[/red]")
+        raise typer.Exit(1)
+
+    s = sessions[0]
+    console.print(f"Session: [cyan]{s['id']}[/cyan]")
+    console.print(f"Content: {s['content']}")
+    console.print(f"Recorded: {(s['recorded_at'] or '')[:19]}  ·  Nodes: {s['node_count']}")
+
+    if not yes:
+        action = "hard-delete (irreversible)" if purge else "tombstone"
+        confirmed = typer.confirm(f"\n{action} this session and all {s['node_count']} of its nodes?")
+        if not confirmed:
+            console.print("[yellow]Cancelled.[/yellow]")
+            raise typer.Exit(0)
+
+    result = store.delete_session(session_id, purge=purge)
+    if purge:
+        console.print(f"[red]Hard-deleted {result['count']} node(s).[/red]")
+    else:
+        console.print(f"[yellow]Tombstoned {result['count']} node(s).[/yellow]")
+
+
 @app.command("forget")
 def cmd_forget(
     node_id: Optional[str] = typer.Option(None, "--node-id", "-n"),

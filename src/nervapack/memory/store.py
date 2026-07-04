@@ -579,6 +579,41 @@ class MemoryStore:
         """Best FTS match among nodes of a given kind."""
         return self.fts_search(query, limit=limit, kinds=[kind])
 
+    def list_sessions(self, limit: int = 50) -> list[dict[str, Any]]:
+        """Return sessions newest-first with node counts."""
+        conn = self._get_conn()
+        rows = conn.execute(
+            """
+            SELECT s.id, s.content, s.recorded_at, s.valid_until, s.tombstoned,
+                   COUNT(n.id) AS node_count
+            FROM mem_nodes s
+            LEFT JOIN mem_nodes n ON n.session_id = s.id AND n.kind != 'session'
+            WHERE s.kind = 'session' AND s.namespace = ?
+            GROUP BY s.id
+            ORDER BY s.recorded_at DESC
+            LIMIT ?
+            """,
+            (self.namespace, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_session(self, session_id: str, purge: bool = False) -> dict[str, Any]:
+        """Tombstone or hard-purge a session node and all nodes that belong to it."""
+        conn = self._get_conn()
+        # Collect the session node itself plus all nodes that occurred in it
+        rows = conn.execute(
+            "SELECT id FROM mem_nodes WHERE id = ? OR session_id = ?",
+            (session_id, session_id),
+        ).fetchall()
+        ids = [r["id"] for r in rows]
+        if not ids:
+            return {"count": 0}
+        if purge:
+            count = self.purge(ids)
+        else:
+            count = self.tombstone(ids)
+        return {"count": count, "mode": "purge" if purge else "tombstone", "ids": ids}
+
     def find_nodes(
         self,
         before: str | None = None,

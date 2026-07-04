@@ -364,7 +364,43 @@ def memory_verify(node_id: str, status: str) -> dict[str, Any]:
         return {"error": f"Unknown status {status!r}. Use 'confirm' or 'refute'."}
 
 
-# ── Tool 9: memory_stats ───────────────────────────────────────────────────────
+# ── Tool 9: memory_list_sessions ──────────────────────────────────────────────
+
+@mcp.tool()
+def memory_list_sessions(limit: int = 50) -> list[dict[str, Any]]:
+    """
+    List all sessions, newest first.
+
+    Returns id, content, recorded_at, node_count, and status
+    (open / closed / tombstoned) for each session.
+
+    Example: memory_list_sessions()
+    """
+    store = _get_store()
+    return store.list_sessions(limit=limit)
+
+
+# ── Tool 10: memory_clear_session ─────────────────────────────────────────────
+
+@mcp.tool()
+def memory_clear_session(
+    session_id: str,
+    purge: bool = False,
+) -> dict[str, Any]:
+    """
+    Delete a session and every node that belongs to it.
+
+    purge=False (default): tombstones all nodes — they disappear from recall
+    but remain in the database for audit / timeline purposes.
+    purge=True: hard-deletes all rows and removes them from FTS (irreversible).
+
+    Example: memory_clear_session("s_0019f2...", purge=False)
+    """
+    store = _get_store()
+    return store.delete_session(session_id, purge=purge)
+
+
+# ── Tool 11: memory_stats ─────────────────────────────────────────────────────
 
 @mcp.tool()
 def memory_stats() -> dict[str, Any]:
