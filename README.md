@@ -673,6 +673,156 @@ context = retriever.format_as_markdown(subgraph)
 
 ---
 
+## nervapack.memory — Agent Memory Layer
+
+Give your AI agent a structured memory that persists facts, decisions, and outcomes across sessions and recalls them in a guaranteed token budget.
+
+### Quickstart (5 minutes)
+
+**1. Install**
+
+```bash
+pip install "nervapack[memory]"
+```
+
+**2. Initialise the store**
+
+```bash
+python -m nervapack.memory init
+# ✓ Memory store initialised at .nervapack/memory.db
+```
+
+**3. Add both servers to `.mcp.json`**
+
+```json
+{
+  "mcpServers": {
+    "nervapack": {
+      "command": "nervapack-mcp",
+      "description": "NervaPack knowledge graph — query_codebase, graph_status, list_entities"
+    },
+    "nervapack-memory": {
+      "command": "nervapack-memory-mcp",
+      "description": "NervaPack agent memory — store, recall, and reason over facts across sessions"
+    }
+  }
+}
+```
+
+**4. Store a decision**
+
+```python
+memory_store(
+    "Chose JWT over session cookies for auth_service — stateless horizontal scaling",
+    kind="decision",
+    entities=["auth_service"],
+    confidence=0.9,
+)
+```
+
+**5. Recall in a future session**
+
+```python
+result = memory_recall("why JWT for auth", budget_tokens=500)
+# Guaranteed ≤ 500 tokens. Cross-process, cross-session.
+```
+
+Output:
+```
+## Memory recall: "why JWT for auth" (as of 2026-07-03 · 3 items · 171/500 tokens)
+
+### Decisions
+- [d_0019f2...] 2026-07-03 · conf 0.90 — Chose JWT over session cookies for auth_service
+
+### Facts
+- [f_0019f2...] 2026-07-03 · conf 1.00 — auth_service issues 15-minute access tokens
+
+### Entities
+- [e_0019f2...] 2026-07-03 · conf 1.00 — auth_service
+
+### Provenance
+d_0019f2... ← session s_0019f2...
+```
+
+### Data Model
+
+**8 node kinds:** `fact`, `decision`, `action`, `outcome`, `entity`, `procedure`, `preference`, `session`
+
+**7 edge kinds:** `ABOUT`, `OCCURRED_IN`, `SUPERSEDES`, `CONTRADICTS`, `CAUSED`, `DERIVED_FROM`, `TOUCHES`
+
+**Bi-temporal:** every node has `valid_from`/`valid_until` (world-time) and `recorded_at` (learn-time). Supersede closes the old window; rows are never deleted in normal operation.
+
+```
+d_aaa  "session cookies"  valid_from=2026-01-01  valid_until=2026-06-01
+  └─[SUPERSEDES]
+d_bbb  "JWT"              valid_from=2026-06-01  valid_until=NULL (current)
+
+memory_recall("auth")              → returns d_bbb only
+memory_recall("auth", as_of=...)  → returns d_aaa only
+memory_timeline("auth")           → returns both (d_aaa marked [superseded])
+```
+
+### MCP Tools
+
+| Tool | Purpose |
+|------|---------|
+| `memory_store` | Persist a fact, decision, outcome, procedure, preference, or action |
+| `memory_recall` | FTS5 search → graph expansion → scored, budget-capped recall |
+| `memory_about` | Entity dossier: all current facts/decisions linked to one entity |
+| `memory_why` | Explain a decision: rationale, rejected alternatives, caused outcomes |
+| `memory_timeline` | Chronological trace including superseded versions |
+| `memory_end_session` | Close session with an outcome summary |
+| `memory_forget` | Tombstone (soft) or hard-purge nodes |
+| `memory_verify` | `confirm` → confidence +0.1; `refute` → close + confidence ×0.5 |
+| `memory_stats` | Node counts, DB size, top entities by degree |
+
+### Recall Pipeline
+
+```
+query
+  ├─ 1. FTS5 BM25 search (exact → prefix* → OR fallback)
+  ├─ 2. Graph expansion (0.6× relevance decay per hop, up to 2 hops)
+  ├─ 3. Temporal mask (exclude superseded, tombstoned, out-of-window)
+  ├─ 4. Score: relevance × recency × frequency × connectivity
+  └─ 5. Budget pack (greedy fill, hard invariant: result ≤ budget_tokens)
+```
+
+### CLI
+
+```bash
+python -m nervapack.memory init                          # create schema
+python -m nervapack.memory stats                         # counts + top entities
+python -m nervapack.memory forget --node-id f_0019f2...  # tombstone
+python -m nervapack.memory forget --entity old_svc --purge  # hard-delete
+python -m nervapack.memory export --out dump.json        # JSON dump
+```
+
+### Storage
+
+| Path | When used |
+|------|-----------|
+| `.nervapack/memory.db` | Default when `.nervapack/` dir exists |
+| `~/.nervapack/memory.db` | Global fallback (created automatically) |
+| `$NERVAPACK_MEMORY_DB` | Override via environment variable |
+
+### Cross-Process Demo
+
+```bash
+NERVAPACK_MEMORY_DB=/tmp/demo.db python examples/seed_demo.py session_a
+NERVAPACK_MEMORY_DB=/tmp/demo.db python examples/seed_demo.py session_b
+# Session B recalls session A's decision in a fresh process: 171/500 tokens ✓
+```
+
+### Design Decisions
+
+- **Standalone SQLite + FTS5** — the existing code graph (NetworkX + ChromaDB) is immutable between ingest cycles and has no temporal semantics; a separate SQLite file is the right substrate for mutable, session-scoped agent memory.
+- **Facts, not chunks** — recall returns atomic assertions (8–30 tokens each) with provenance metadata, not transcript segments.
+- **Bi-temporal, never delete** — supersede closes the old `valid_until`; only `memory_forget(purge=True)` hard-deletes.
+- **No network at runtime** — all storage, search, and scoring is local. No embeddings generated at query time.
+- **Token discipline** — `pack()` enforces a hard invariant: the result always fits in `budget_tokens`.
+
+---
+
 ## Contributing
 
 1. Fork the repo and create a branch.

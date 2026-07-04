@@ -134,6 +134,7 @@ nav:
       - Knowledge Graphs: user-guide/concepts/knowledge-graphs.md
       - Architecture: user-guide/concepts/architecture.md
       - Token Efficiency: user-guide/concepts/token-efficiency.md
+      - Agent Memory: user-guide/concepts/memory.md
     - Commands:
       - ingest: user-guide/commands/ingest.md
       - query: user-guide/commands/query.md
@@ -144,9 +145,11 @@ nav:
       - dependencies: user-guide/commands/dependencies.md
       - serve: user-guide/commands/serve.md
       - history: user-guide/commands/history.md
+      - memory: user-guide/commands/memory.md
 
   - Integrations:
-    - MCP Server: integrations/mcp-server.md
+    - MCP Server (Code Graph): integrations/mcp-server.md
+    - Memory MCP Server: integrations/memory-mcp.md
     - Python SDK: integrations/python-sdk.md
 
   - API Reference:

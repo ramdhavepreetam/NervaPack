@@ -76,6 +76,14 @@ NervaPack runs 100% on your machine. It uses `tree-sitter` to parse your codebas
 
     [:octicons-arrow-right-24: Visualization guide](user-guide/commands/visualize.md)
 
+-   :material-brain: **Agent Memory Layer**
+
+    ---
+
+    Persist facts, decisions, and outcomes across sessions. Budget-capped recall guaranteed ≤ N tokens. Bi-temporal model — ask "what did we know on date X?" Works offline, no embeddings.
+
+    [:octicons-arrow-right-24: Memory guide](user-guide/concepts/memory.md) · [:octicons-arrow-right-24: MCP tools](integrations/memory-mcp.md)
+
 </div>
 
 ---

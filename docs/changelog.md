@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.4.2] - 2026-07-03
+
+### Added — `nervapack.memory` (Phase 1)
+
+- **`nervapack.memory`** — a new structured agent memory layer, fully independent of the code-graph stack.
+- **SQLite store** (`src/nervapack/memory/store.py`) with FTS5 full-text search (BM25), bi-temporal schema (`valid_from` / `valid_until` world-time + `recorded_at` learn-time), 8 node kinds, 7 edge kinds, external-content FTS5 table synced via INSERT/UPDATE/DELETE triggers.
+- **Recall pipeline** (`src/nervapack/memory/recall.py`): FTS5 BM25 entry search → graph expansion (up to 2 hops, 0.6× relevance decay) → temporal mask → 4-factor scoring (relevance × recency × frequency × connectivity) → budget packing.
+- **Token budget enforcement** (`src/nervapack/memory/pack.py`): `CharTokenCounter` (built-in, `ceil(len/4)`) and optional tiktoken; `pack()` guarantees result is always `≤ budget_tokens`.
+- **Entity resolution** (`src/nervapack/memory/resolve.py`): case-insensitive alias lookup + normalised separator-stripped matching (`AuthService` ↔ `auth_service` ↔ `auth-service`).
+- **MCP server** (`nervapack-memory-mcp`) exposing 9 tools: `memory_store`, `memory_recall`, `memory_about`, `memory_why`, `memory_timeline`, `memory_end_session`, `memory_forget`, `memory_verify`, `memory_stats`.
+- **CLI** (`nervapack-memory`) with 4 commands: `init`, `stats`, `forget`, `export`.
+- **Phase 2 stubs**: `NoopConsolidator` queues consolidation without making LLM calls; `mem_review_queue` table present for future entity merge workflow.
+- **Cross-process demo** (`examples/seed_demo.py`): session A stores a decision, session B recalls it in a fresh process within 500-token budget.
+- **56 tests** covering CRUD, FTS sync, bi-temporal supersede, budget invariant, entity resolution, all 9 MCP tools, cross-session persistence.
+- **mypy clean** across all 8 source files in `nervapack.memory`.
+
+### Changed
+
+- `.mcp.json` — added `nervapack-memory` server entry alongside existing `nervapack` server.
+- `pyproject.toml` — added `memory = ["mcp[cli]>=1.0.0"]` and `tokens = ["tiktoken>=0.5.0"]` extras; added two new entry points (`nervapack-memory-mcp`, `nervapack-memory`).
+- Documentation — added memory concept guide, CLI reference, full MCP tool reference; updated architecture doc, MCP integration page, and README.
+
+### Design constraints (enforced by implementation)
+
+- No network calls at runtime — fully local, offline-first, zero telemetry.
+- No hard deletes in normal operation — supersede closes `valid_until`; `memory_forget(purge=True)` is the only sanctioned hard delete.
+- No Phase 2/3 functionality (no LLM calls, no embeddings) in this release.
+- Facts, not chunks — every recalled item is an atomic assertion with provenance.
+
+---
+
 ## [0.4.1] - 2026-06-18
 
 ### Fixed

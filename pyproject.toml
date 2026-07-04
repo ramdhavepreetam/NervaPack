@@ -45,6 +45,10 @@ dependencies = [
 mcp     = ["mcp[cli]>=1.0.0"]
 metrics = ["tiktoken>=0.5.0"]
 dashboard = ["streamlit>=1.29.0", "plotly>=5.18.0"]
+# Memory layer
+memory  = ["mcp[cli]>=1.0.0"]
+tokens  = ["tiktoken>=0.5.0"]
+vec     = []  # Phase 2: sqlite-vec + sentence-transformers
 
 # Cloud LLM providers (alternatives to Ollama)
 claude  = ["anthropic>=0.18.0"]
@@ -86,5 +90,7 @@ Repository = "https://github.com/ramdhavepreetam/NervaPack"
 Documentation = "https://github.com/ramdhavepreetam/NervaPack#readme"
 
 [project.scripts]
-nervapack     = "nervapack.cli:app"
-nervapack-mcp = "nervapack.mcp_server:main"
+nervapack            = "nervapack.cli:app"
+nervapack-mcp        = "nervapack.mcp_server:main"
+nervapack-memory-mcp = "nervapack.memory.mcp_server:main"
+nervapack-memory     = "nervapack.memory.cli:main"

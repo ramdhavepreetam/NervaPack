@@ -222,6 +222,7 @@ project-root/
 │   ├── chroma_db/                 # ChromaDB vector store
 │   │   ├── chroma.sqlite3         # Metadata
 │   │   └── index/                 # Vector indices
+│   ├── memory.db                  # Agent memory (SQLite, FTS5, bi-temporal)
 │   ├── query_history.jsonl        # Query logs
 │   ├── graph.html                 # Generated visualizations
 │   ├── dependencies.html
@@ -255,7 +256,13 @@ project-root/
 | `llm.providers.openai_api` | OpenAI API | `OpenAIProvider` |
 | `llm.providers.mcp_delegation` | MCP passthrough | `MCPDelegationProvider` |
 | `git.tracker` | Git diff tracking | `GitTracker` |
-| `mcp_server` | MCP server | `FastMCP` app |
+| `mcp_server` | Knowledge-graph MCP server | `FastMCP` app |
+| `memory.store` | Agent memory SQLite store | `MemoryStore` |
+| `memory.recall` | FTS → expand → score → pack pipeline | `recall()`, `recall_timeline()` |
+| `memory.pack` | Token counting and Markdown rendering | `pack()`, `CharTokenCounter` |
+| `memory.resolve` | Entity alias resolution | `resolve_entities()` |
+| `memory.mcp_server` | Memory MCP server (9 tools) | `FastMCP` app |
+| `memory.cli` | Memory CLI | Typer commands |
 | `cli` | Command-line interface | Typer commands |
 | `dashboard.app` | Streamlit dashboard | `main()` |
 
@@ -378,10 +385,43 @@ def my_command(
 
 ---
 
+## Memory Layer (`nervapack.memory`)
+
+The memory layer is a separate subsystem from the code-graph stack. It uses a standalone SQLite database with FTS5 full-text search and a bi-temporal schema — independent of NetworkX and ChromaDB.
+
+```mermaid
+graph TD
+    Agent -->|store / recall| MemoryMCP[Memory MCP Server]
+    MemoryMCP --> MemoryStore[MemoryStore SQLite]
+    MemoryStore --> FTS5[FTS5 Index]
+    MemoryStore --> BiTemporal[Bi-temporal nodes / edges]
+    MemoryStore --> Aliases[Entity aliases NOCASE]
+
+    Agent -->|query_codebase| GraphMCP[Graph MCP Server]
+    GraphMCP --> VectorStore[ChromaDB]
+    GraphMCP --> GraphRetriever[GraphRetriever BFS]
+    GraphRetriever --> NetworkX[NetworkX DiGraph]
+```
+
+The two stores serve different purposes:
+
+| | Code Graph (NetworkX + ChromaDB) | Agent Memory (SQLite + FTS5) |
+|--|--|--|
+| Content | AST nodes, doc chunks, edges | Facts, decisions, outcomes, entities |
+| Mutability | Immutable between ingest cycles | Append-only with soft supersede |
+| Search | Vector similarity (embeddings) | BM25 full-text (FTS5) |
+| Temporal | None | Full bi-temporal (valid_from / valid_until) |
+| Budget control | None | Guaranteed ≤ budget_tokens per recall |
+
+See the [memory concept guide](memory.md) for data model and recall pipeline details.
+
+---
+
 ## Next Steps
 
 Now that you understand the architecture:
 
+- **[Memory concept guide](memory.md)** — Data model, recall pipeline, bi-temporal semantics
 - **[API Reference](../../api/graph.md)** — Dive into specific modules
 - **[Python SDK](../../integrations/python-sdk.md)** — Build custom tools
 - **[Contributing](../../contributing.md)** — Extend NervaPack
