@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nervapack"
-version = "0.4.2"
+version = "0.4.3"
 description = "Privacy-first, offline knowledge graph for developers"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -94,3 +94,6 @@ nervapack            = "nervapack.cli:app"
 nervapack-mcp        = "nervapack.mcp_server:main"
 nervapack-memory-mcp = "nervapack.memory.mcp_server:main"
 nervapack-memory     = "nervapack.memory.cli:main"
+
+[tool.setuptools.package-data]
+nervapack = ["memory/schema.sql"]
