@@ -1,6 +1,9 @@
 # Memory MCP Server
 
-`nervapack-memory-mcp` is an MCP server that exposes 9 tools for storing and recalling structured agent memory. Any MCP-compatible client — Claude Code, Cursor, or a custom agent — can use it to persist facts, decisions, and outcomes across sessions.
+`nervapack-memory-mcp` is an MCP server that exposes **12 tools** for storing and recalling structured agent memory. Any MCP-compatible client — Claude Code, Cursor, or a custom agent — can use it to persist facts, decisions, and outcomes across sessions.
+
+!!! tip "Primary use case: conversation context extender"
+    Call `memory_recall("project context")` at the start of every new chat. Get a complete project briefing — 30 days of decisions and conventions — in under 200 tokens. No more re-pasting architecture docs. See the [Context Extender guide](../user-guide/concepts/context-extender.md) for the full workflow and seeding instructions.
 
 ---
 
@@ -59,6 +62,8 @@ Persist a memory node and link it to entities.
 | `valid_from` | string | No | ISO-8601 timestamp when this became true. Default: now |
 | `supersedes` | string | No | Node ID to supersede (closes its `valid_until`, adds SUPERSEDES edge) |
 | `session_id` | string | No | Attach to a specific session. Default: auto-created session |
+| `rationale` | string | No | *Why* this decision was made. Surfaced by `memory_why`. |
+| `alternatives_rejected` | list[string] | No | Options that were considered but dropped. Surfaced by `memory_why`. |
 
 **Returns:**
 
@@ -73,12 +78,14 @@ Persist a memory node and link it to entities.
 **Examples:**
 
 ```python
-# Store a decision
+# Store a decision with rationale — surfaces in memory_why
 memory_store(
     "Chose JWT over session cookies for auth_service — stateless horizontal scaling",
     kind="decision",
     entities=["auth_service"],
     confidence=0.9,
+    rationale="Stateless tokens enable horizontal scaling without a shared session store.",
+    alternatives_rejected=["server-side sessions", "PASETO"],
 )
 
 # Store a fact with temporal anchor
@@ -89,6 +96,12 @@ memory_store(
     valid_from="2026-07-01T00:00:00",
 )
 
+# Store a team convention
+memory_store(
+    "All new services must expose /health and /metrics endpoints",
+    kind="preference",
+)
+
 # Supersede an old decision
 memory_store(
     "Switched auth_service from JWT to Paseto v4 for stronger type safety",
@@ -97,23 +110,6 @@ memory_store(
     supersedes="d_0019f2...",
 )
 ```
-
-!!! note "Rich decision metadata"
-    To store `rationale` and `alternatives_rejected` on a decision, use the Python library API:
-    ```python
-    from nervapack.memory import MemoryStore
-    store = MemoryStore()
-    store.add_node(
-        kind="decision",
-        content="Chose JWT for auth_service",
-        data={
-            "rationale": "Stateless tokens enable horizontal scaling without shared session store.",
-            "alternatives_rejected": ["server-side sessions", "PASETO"],
-        },
-        confidence=0.9,
-    )
-    ```
-    These fields are then surfaced by `memory_why`. The MCP `memory_store` tool does not expose a `data` parameter by design — it keeps the tool surface minimal.
 
 ---
 
@@ -130,6 +126,7 @@ Retrieve the most relevant memories for a query, packed into a token budget.
 | `kinds` | list[string] | No | Filter to specific node kinds |
 | `as_of` | string | No | ISO-8601 timestamp for point-in-time recall |
 | `hops` | int | No | Graph expansion depth. Default `1`, max `2` |
+| `min_confidence` | float | No | Minimum confidence threshold (0.0–1.0). Default `0.0` (all nodes) |
 
 **Returns:** Markdown string, always `≤ budget_tokens`.
 
@@ -144,7 +141,10 @@ Retrieve the most relevant memories for a query, packed into a token budget.
 **Examples:**
 
 ```python
-# Basic recall
+# Context extender — call this at the start of every session
+memory_recall("project context", budget_tokens=400)
+
+# Specific topic recall
 memory_recall("why JWT for auth")
 
 # Budget-limited to 200 tokens
@@ -155,6 +155,9 @@ memory_recall("auth_service", kinds=["fact"], as_of="2026-01-15T00:00:00")
 
 # 2-hop expansion to pull in connected context
 memory_recall("payment flow", hops=2)
+
+# Only high-confidence nodes
+memory_recall("auth decisions", min_confidence=0.8)
 ```
 
 **Output:**
@@ -426,32 +429,107 @@ memory_stats()
 
 ---
 
+### `memory_start_session`
+
+Explicitly open a named session and return its ID. Use this instead of letting sessions be auto-created, so the sessions list is readable.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | string | Yes | Human-readable task name (e.g. "Debugging payment flow") |
+
+**Returns:**
+
+```json
+{
+  "session_id": "s_0019f2...",
+  "created": true
+}
+```
+
+If a session is already open, returns `"created": false` and the existing session ID.
+
+**Example:**
+
+```python
+memory_start_session("JWT auth refactor")
+# Returns {"session_id": "s_0019f2...", "created": true}
+```
+
+---
+
+### `memory_list_sessions`
+
+List all sessions, newest first.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `limit` | int | No | Maximum sessions to return. Default `50` |
+
+**Returns:** List of session objects with `id`, `content`, `recorded_at`, `node_count`, `valid_until`, `tombstoned`.
+
+---
+
+### `memory_clear_session`
+
+Delete a session and every node that belongs to it.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `session_id` | string | Yes | Session ID to delete |
+| `purge` | bool | No | `True` = hard-delete (irreversible). Default `False` (tombstone) |
+
+**Returns:**
+
+```json
+{
+  "count": 5,
+  "mode": "tombstone",
+  "ids": ["s_...", "f_...", "d_...", "o_...", "e_..."]
+}
+```
+
+---
+
 ## Recommended Agent Workflow
 
 ```
 Session start
-  └─ memory_recall("task context", budget_tokens=300)   # load prior context
-       │
+  ├─ memory_start_session("Task name")                    # name the session
+  ├─ memory_recall("project context", budget_tokens=400)  # load all prior context
+  └─ memory_recall("specific topic", budget_tokens=200)   # load topic-specific context
+
        │  ... agent works ...
-       │
-  ├─ memory_store("decision", kind="decision", entities=[...])
-  ├─ memory_store("fact discovered", kind="fact")
+
+  ├─ memory_store("decision made", kind="decision",
+  │               entities=["service_name"],
+  │               rationale="...", alternatives_rejected=["..."])
+  ├─ memory_store("fact discovered", kind="fact", entities=["component"])
+  ├─ memory_verify("f_0019f2...", "confirm")              # confirm a prior fact holds
   │
-  └─ memory_end_session("Summary of what was done")      # session end
+  └─ memory_end_session("Summary of what was done")       # close session
 ```
 
 **When to call each tool:**
 
 | Tool | When |
 |------|------|
-| `memory_recall` | At session start — before answering questions that depend on history |
-| `memory_store` | Any decision, fact, or outcome worth preserving |
+| `memory_start_session` | First thing — name the session for the task |
+| `memory_recall` | At session start — load project context and topic context |
+| `memory_store` | Any decision, fact, convention, or outcome worth preserving |
 | `memory_about` | When asked about a specific service or component |
 | `memory_why` | When asked to justify or explain a past decision |
 | `memory_timeline` | When the user asks about the history of something |
 | `memory_verify` | When a prior fact is confirmed or contradicted by new evidence |
 | `memory_forget` | When explicitly asked to forget something |
 | `memory_end_session` | When a task or conversation ends |
+| `memory_list_sessions` | To audit or review past sessions |
+| `memory_clear_session` | To delete a session and all its nodes |
 | `memory_stats` | Diagnostic/administrative use |
 
 ---
@@ -501,6 +579,7 @@ Token count: 171/500  ✓
 
 ## See Also
 
+- [Context Extender guide](../user-guide/concepts/context-extender.md) — conversation context workflow, Claude prompt template, seeding from existing notes
 - [Memory concept guide](../user-guide/concepts/memory.md) — data model, recall pipeline, bi-temporal semantics
-- [memory CLI](../user-guide/commands/memory.md) — `init`, `stats`, `forget`, `export`
+- [memory CLI](../user-guide/commands/memory.md) — `init`, `stats`, `search`, `show`, `forget`, `export`
 - [Knowledge Graph MCP Server](mcp-server.md) — code graph tools: `query_codebase`, `graph_status`, `list_entities`

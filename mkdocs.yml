@@ -135,6 +135,7 @@ nav:
       - Architecture: user-guide/concepts/architecture.md
       - Token Efficiency: user-guide/concepts/token-efficiency.md
       - Agent Memory: user-guide/concepts/memory.md
+      - Context Extender: user-guide/concepts/context-extender.md
     - Commands:
       - ingest: user-guide/commands/ingest.md
       - query: user-guide/commands/query.md

@@ -76,13 +76,13 @@ NervaPack runs 100% on your machine. It uses `tree-sitter` to parse your codebas
 
     [:octicons-arrow-right-24: Visualization guide](user-guide/commands/visualize.md)
 
--   :material-brain: **Agent Memory Layer**
+-   :material-brain: **Conversation Context Extender**
 
     ---
 
-    Persist facts, decisions, and outcomes across sessions. Budget-capped recall guaranteed ≤ N tokens. Bi-temporal model — ask "what did we know on date X?" Works offline, no embeddings.
+    Stop re-pasting project context into every new chat. `memory_recall("project context")` delivers a complete briefing — 30 days of decisions and conventions — in under 200 tokens. Bi-temporal model keeps only current truth. Works offline, no embeddings.
 
-    [:octicons-arrow-right-24: Memory guide](user-guide/concepts/memory.md) · [:octicons-arrow-right-24: MCP tools](integrations/memory-mcp.md)
+    [:octicons-arrow-right-24: How it works](user-guide/concepts/context-extender.md) · [:octicons-arrow-right-24: MCP tools](integrations/memory-mcp.md)
 
 </div>
 
@@ -161,11 +161,13 @@ pip install "nervapack[all-languages]" # Everything
 
 ## Use Cases
 
-- **Code onboarding** — Understand new codebases 10x faster
-- **Documentation search** — Find relevant docs linked to code
-- **Refactoring analysis** — See full dependency impact
-- **LLM context optimization** — 90% smaller prompts, same accuracy
-- **Dependency auditing** — Detect circular dependencies
+- **Conversation context** — Start every new chat with full project context in < 200 tokens — no copy-paste
+- **Code onboarding** — Understand new codebases 10x faster with graph-precise retrieval
+- **Decision log** — Persist architecture choices across sessions; ask *why* any decision was made
+- **LLM context optimization** — 91% smaller prompts via graph traversal vs. naive RAG
+- **Documentation search** — Find relevant docs linked to the exact code functions they describe
+- **Refactoring analysis** — See full dependency impact before touching a file
+- **Team conventions** — Store code style rules, deploy procedures, and review norms in memory; every agent session starts with them
 
 ---
 

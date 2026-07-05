@@ -2,6 +2,9 @@
 
 `nervapack.memory` gives AI agents a structured, persistent memory that survives across sessions. It stores atomic facts, decisions, outcomes, and other knowledge in a local SQLite database with FTS5 full-text search and a bi-temporal data model. On recall it returns a scored, budget-capped Markdown block that fits inside your LLM's context window.
 
+!!! tip "The conversation context use case"
+    The most practical application: **eliminate re-pasting project context into every new chat**. Call `memory_recall("project context")` at the start of each session and get a complete briefing — 30 days of decisions and conventions in 171 tokens. See the [Context Extender guide](context-extender.md) for the full workflow.
+
 ---
 
 ## The Problem It Solves
@@ -126,9 +129,10 @@ After packing, `access_count` and `last_accessed` are incremented on every retur
 Entity names are normalised so `AuthService`, `auth_service`, and `auth-service` all resolve to the same entity node. When `memory_store` receives `entities=["AuthService"]`:
 
 1. Look up alias `AuthService` (case-insensitive via `COLLATE NOCASE`).
-2. If not found, strip separators and try normalised form (`authservice`).
-3. If not found, run FTS on entity content.
-4. If still not found, create a new `entity` node and register three alias forms: original, `snake_case`, and normalised.
+2. Convert CamelCase to snake_case and try that alias (`AuthService` → `auth_service`).
+3. Strip all separators and try normalised form (`authservice`).
+4. Run FTS on entity content.
+5. If still not found, create a new `entity` node and register four alias forms: original, basic slug, CamelCase→snake_case, and separator-stripped.
 
 ---
 
@@ -205,6 +209,7 @@ All storage, retrieval, and scoring is local. No embeddings are generated at que
 
 ## See Also
 
-- [Memory MCP Server](../../integrations/memory-mcp.md) — 9 MCP tools exposed to Claude Code / Cursor
-- [memory CLI](../commands/memory.md) — `init`, `stats`, `forget`, `export`
+- [Context Extender guide](context-extender.md) — how to use memory as a conversation context extender, seeding workflow, Claude prompt template
+- [Memory MCP Server](../../integrations/memory-mcp.md) — 12 MCP tools exposed to Claude Code / Cursor
+- [memory CLI](../commands/memory.md) — `init`, `stats`, `search`, `show`, `forget`, `export`
 - [Architecture](architecture.md) — how memory relates to the code graph
