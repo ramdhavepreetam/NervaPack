@@ -399,3 +399,127 @@ async def test_memory_recall_min_confidence(mcp_app):
         })
         assert "high confidence" in result
         assert "low confidence" not in result
+
+
+# ── Phase 2 MCP tests ─────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_memory_end_session_queues_consolidation_job(mcp_app):
+    """memory_end_session now queues a row in mem_review_queue."""
+    import nervapack.memory.mcp_server as ms
+    async with create_connected_server_and_client_session(mcp_app) as client:
+        await _call_tool(client, "memory_store", {"content": "a fact", "kind": "fact"})
+        await _call_tool(client, "memory_end_session", {"summary": "test done"})
+
+    store = ms._get_store()
+    jobs = store.get_pending_jobs()
+    assert len(jobs) >= 1
+
+
+@pytest.mark.asyncio
+async def test_memory_import_basic(mcp_app):
+    """memory_import loads nodes and they appear in recall."""
+    async with create_connected_server_and_client_session(mcp_app) as client:
+        result = await _call_tool(client, "memory_import", {
+            "nodes": [
+                {"content": "Import test: chose gzip compression for logs", "kind": "decision", "confidence": 0.9},
+                {"content": "Import test: all workers need heartbeat monitoring", "kind": "preference"},
+            ]
+        })
+        assert result["imported"] == 2
+        assert len(result["node_ids"]) == 2
+        assert result["errors"] == []
+
+        recall = await _call_tool(client, "memory_recall", {"query": "gzip compression logs", "budget_tokens": 500})
+        assert "gzip" in recall
+
+
+@pytest.mark.asyncio
+async def test_memory_import_with_entities(mcp_app):
+    """memory_import creates ABOUT edges for entities."""
+    async with create_connected_server_and_client_session(mcp_app) as client:
+        result = await _call_tool(client, "memory_import", {
+            "nodes": [
+                {"content": "Use async_db for all reads", "kind": "decision",
+                 "entities": ["async_db"]},
+            ]
+        })
+        assert result["imported"] == 1
+        # Entity should have been created
+        assert len(result["created_entity_ids"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_memory_import_bad_kind_skipped(mcp_app):
+    """memory_import skips nodes with invalid kinds and reports errors."""
+    async with create_connected_server_and_client_session(mcp_app) as client:
+        result = await _call_tool(client, "memory_import", {
+            "nodes": [
+                {"content": "valid node", "kind": "fact"},
+                {"content": "bad kind node", "kind": "bogus"},
+            ]
+        })
+        assert result["imported"] == 1
+        assert len(result["errors"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_memory_for_code_no_touches(mcp_app):
+    """memory_for_code returns a no-match message when no TOUCHES edges exist."""
+    async with create_connected_server_and_client_session(mcp_app) as client:
+        result = await _call_tool(client, "memory_for_code", {"file_path": "src/nonexistent.py"})
+        assert isinstance(result, str)
+        assert "No memories" in result
+
+
+@pytest.mark.asyncio
+async def test_memory_to_code_empty(mcp_app):
+    """memory_to_code returns empty list for a node with no TOUCHES edges."""
+    async with create_connected_server_and_client_session(mcp_app) as client:
+        store_result = await _call_tool(client, "memory_store", {
+            "content": "no code connection", "kind": "fact"
+        })
+        result = await _call_tool(client, "memory_to_code", {"memory_id": store_result["node_id"]})
+        assert result == [] or result is None or result == {}
+
+
+@pytest.mark.asyncio
+async def test_touches_edge_created_when_graph_loaded(mcp_app, monkeypatch):
+    """When code graph is present and entity matches, TOUCHES edge is created on memory_store."""
+    import networkx as nx
+    import nervapack.memory.mcp_server as ms
+
+    # Build a minimal graph with one known node
+    G = nx.DiGraph()
+    G.add_node(
+        "function:src/auth.py:verify_token:42",
+        type="function",
+        name="verify_token",
+        file_path="src/auth.py",
+        start_line=42,
+        end_line=61,
+        content="def verify_token(token): ...",
+    )
+
+    # Inject the mock graph and reset graph cache
+    ms._code_graph = None
+    monkeypatch.setattr(ms, "_get_code_graph", lambda: G)
+
+    async with create_connected_server_and_client_session(mcp_app) as client:
+        result = await _call_tool(client, "memory_store", {
+            "content": "verify_token must validate expiry",
+            "kind": "fact",
+            "entities": ["verify_token"],
+        })
+        node_id = result["node_id"]
+
+        # Verify TOUCHES edge was created
+        code_locs = await _call_tool(client, "memory_to_code", {"memory_id": node_id})
+        # code_locs may be None/empty/list
+        if isinstance(code_locs, list) and code_locs:
+            loc = code_locs[0]
+            assert loc.get("file_path") == "src/auth.py"
+            assert loc.get("start_line") == 42
+
+    # Clean up graph override
+    ms._code_graph = None

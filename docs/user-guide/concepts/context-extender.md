@@ -240,9 +240,59 @@ Not every conversation detail should be stored. Use this guide:
 
 ---
 
+---
+
+## Seeding from Existing Notes with `memory_import`
+
+If you have existing architecture decisions, ADRs, or project notes, you can seed memory without writing session transcripts. The `memory_import` CLI command and MCP tool accept a plain JSON array:
+
+```json
+[
+  {"content": "Use PostgreSQL for all transactional data — ACID required for payments",
+   "kind": "decision", "entities": ["postgres", "payment_service"], "confidence": 1.0},
+  {"content": "All services expose /health and /metrics endpoints",
+   "kind": "preference"},
+  {"content": "Deploy via GitHub Actions — staging auto, prod requires manual approval",
+   "kind": "procedure"},
+  {"content": "Rate limiting: 1000 req/min per API key, sliding window",
+   "kind": "fact", "entities": ["api_gateway"]}
+]
+```
+
+```bash
+# Save as seed.json, then:
+nervapack-memory import seed.json
+```
+
+After import, `memory_recall("project context")` immediately returns a briefing that includes everything you seeded. This is useful for:
+
+- **Onboarding** — seed a team's collective knowledge before the first session
+- **Migration** — pull in decisions from a Notion doc or ADR folder
+- **Bootstrapping** — convert existing `ARCHITECTURE.md` bullet points into queryable memory
+
+The MCP tool `memory_import` does the same from inside a Claude session.
+
+---
+
+## Consolidation: Keeping Memory Clean
+
+Over weeks of sessions, some facts accumulate near-duplicate entries. The `consolidate` command deduplicates them automatically:
+
+```bash
+# Process pending consolidation jobs (queued by memory_end_session)
+nervapack-memory consolidate
+
+# Preview what would be tombstoned without making changes
+nervapack-memory consolidate --dry-run
+```
+
+Consolidation uses Jaccard word-overlap (threshold > 0.9) — identical or near-identical sentences are collapsed to the most recent version. This keeps recall results clean as the memory grows.
+
+---
+
 ## See Also
 
-- [Memory concept guide](memory.md) — data model, recall pipeline, bi-temporal semantics
-- [Memory MCP Server](../../integrations/memory-mcp.md) — all 12 tools with parameters and examples
-- [memory CLI](../commands/memory.md) — `init`, `stats`, `search`, `show`, `import`, `export`
+- [Memory concept guide](memory.md) — data model, recall pipeline, bi-temporal semantics, TOUCHES bridge
+- [Memory MCP Server](../../integrations/memory-mcp.md) — all 15 tools with parameters and examples
+- [memory CLI](../commands/memory.md) — `init`, `stats`, `search`, `show`, `import`, `export`, `consolidate`
 - [Architecture](architecture.md) — how memory relates to the code graph

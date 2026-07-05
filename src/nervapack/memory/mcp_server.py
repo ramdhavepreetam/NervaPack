@@ -20,10 +20,10 @@ except ImportError:
         "MCP SDK is not installed. Run: pip install nervapack[mcp]"
     )
 
-from .consolidate import NoopConsolidator
+from .consolidate import RuleBasedConsolidator
 from .pack import get_token_counter, pack
 from .recall import recall, recall_timeline
-from .resolve import resolve_entities
+from .resolve import match_code_entity, resolve_entities
 from .store import MemoryStore, _now_iso
 
 mcp = FastMCP(
@@ -39,6 +39,18 @@ mcp = FastMCP(
 
 _store: MemoryStore | None = None
 _session_id: str | None = None
+_code_graph: "Any" = None  # NetworkX graph or False (tried+failed) or None (not yet tried)
+
+
+def _get_code_graph() -> "Any":
+    global _code_graph
+    if _code_graph is None:
+        try:
+            from nervapack.graph.builder import GraphBuilder
+            _code_graph = GraphBuilder().load_graph()
+        except Exception:
+            _code_graph = False  # sentinel: don't retry
+    return _code_graph if _code_graph is not False else None
 
 
 def _get_store() -> MemoryStore:
@@ -148,6 +160,19 @@ def memory_store(
         store.add_edge(node_id, eid, "ABOUT")
 
     store.add_edge(node_id, sid, "OCCURRED_IN")
+
+    # TOUCHES bridge: link memory node to code graph nodes when graph is available
+    graph = _get_code_graph()
+    if graph is not None:
+        for eid in linked:
+            entity_node = store.get_node(eid)
+            if entity_node:
+                code_match = match_code_entity(graph, entity_node["content"])
+                if code_match:
+                    existing = json.loads(entity_node.get("data") or "{}")
+                    existing.update(code_match)
+                    store.update_node(eid, data=json.dumps(existing))
+                    store.add_edge(node_id, eid, "TOUCHES", data=code_match)
 
     if supersedes:
         node = store.get_node(supersedes)
@@ -321,7 +346,7 @@ def memory_end_session(summary: str) -> dict[str, Any]:
     )
     store.add_edge(outcome_id, sid, "OCCURRED_IN")
 
-    consolidator = NoopConsolidator()
+    consolidator = RuleBasedConsolidator(store)
     consolidator.consolidate(sid, summary)
 
     closed_id = _session_id
@@ -457,6 +482,121 @@ def memory_stats() -> dict[str, Any]:
     """
     store = _get_store()
     return store.stats()
+
+
+# ── Tool 12: memory_for_code ──────────────────────────────────────────────────
+
+@mcp.tool()
+def memory_for_code(
+    file_path: str,
+    line: int | None = None,
+) -> str:
+    """
+    Return memories that TOUCH a given source file (optionally at a specific line).
+
+    Use this to answer "what decisions were made about this file or function?"
+    Requires the code graph to have been built (nervapack build) and memory_store
+    to have been called with matching entity names.
+
+    Example: memory_for_code("src/nervapack/memory/store.py", line=172)
+    """
+    store = _get_store()
+    nodes = store.get_touches_for_file(file_path, line=line)
+    if not nodes:
+        return f"No memories touch {file_path}" + (f":{line}" if line else "")
+    lines = [f"## Memories touching `{file_path}`" + (f":{line}" if line else "")]
+    for n in nodes:
+        kind = n.get("kind", "node")
+        content = n.get("content", "")
+        conf = n.get("confidence", 1.0)
+        lines.append(f"- [{kind}] ({conf:.0%}) {content}")
+    return "\n".join(lines)
+
+
+# ── Tool 13: memory_to_code ───────────────────────────────────────────────────
+
+@mcp.tool()
+def memory_to_code(memory_id: str) -> list[dict[str, Any]]:
+    """
+    Return code-graph locations that a memory node TOUCHES.
+
+    Provides file_path, start_line, end_line, and code_type for each match.
+    Returns an empty list if the node has no TOUCHES edges.
+
+    Example: memory_to_code("d_01J...")
+    """
+    store = _get_store()
+    return store.get_touches_from_node(memory_id)
+
+
+# ── Tool 14: memory_import ────────────────────────────────────────────────────
+
+@mcp.tool()
+def memory_import(nodes: list[dict[str, Any]]) -> dict[str, Any]:
+    """
+    Bulk-import memory nodes from a list of dicts.
+
+    Each dict must have: content (str), kind (str).
+    Optional: entities (list[str]), confidence (float), valid_from (str),
+              rationale (str), alternatives_rejected (list[str]), session_id (str).
+
+    Also accepts the full export format: {"nodes": [...], "edges": [...]} —
+    pass the "nodes" array only (edges are rebuilt via entity resolution).
+
+    Example:
+      memory_import([
+        {"content": "Chose JWT for auth", "kind": "decision",
+         "entities": ["auth_service"], "confidence": 0.9}
+      ])
+    """
+    store = _get_store()
+    node_ids: list[str] = []
+    all_created: list[str] = []
+    errors: list[str] = []
+
+    valid_kinds = {"session", "fact", "decision", "action", "outcome",
+                   "entity", "procedure", "preference"}
+
+    for i, spec in enumerate(nodes):
+        content = spec.get("content", "")
+        kind = spec.get("kind", "fact")
+        if not content:
+            errors.append(f"[{i}] missing content")
+            continue
+        if kind not in valid_kinds:
+            errors.append(f"[{i}] unknown kind {kind!r}")
+            continue
+
+        data: dict[str, Any] = {}
+        if spec.get("rationale"):
+            data["rationale"] = spec["rationale"]
+        if spec.get("alternatives_rejected"):
+            data["alternatives_rejected"] = spec["alternatives_rejected"]
+
+        sid = spec.get("session_id") or _get_or_create_session()
+        node_id = store.add_node(
+            kind=kind,
+            content=content,
+            confidence=float(spec.get("confidence", 1.0)),
+            valid_from=spec.get("valid_from"),
+            session_id=sid,
+            data=data if data else None,
+        )
+        node_ids.append(node_id)
+
+        entity_names: list[str] = spec.get("entities") or []
+        linked, created = resolve_entities(store, entity_names, session_id=sid)
+        all_created.extend(created)
+        for eid in linked:
+            store.add_edge(node_id, eid, "ABOUT")
+        store.add_edge(node_id, sid, "OCCURRED_IN")
+
+    return {
+        "imported": len(node_ids),
+        "node_ids": node_ids,
+        "created_entity_ids": all_created,
+        "errors": errors,
+    }
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────

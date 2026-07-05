@@ -160,3 +160,105 @@ def test_delete_session_purge(store):
     store.delete_session(sid, purge=True)
     assert store.get_node(sid) is None
     assert store.get_node(nid) is None
+
+
+# ── Phase 2: consolidation queue ────────────────────────────────────────────────
+
+def test_queue_consolidation_writes_row(store):
+    sid = store.add_node("session", "Queue test session")
+    store.queue_consolidation(sid, "test summary")
+    jobs = store.get_pending_jobs()
+    assert len(jobs) == 1
+    assert jobs[0]["resolved"] == 0
+    import json
+    payload = json.loads(jobs[0]["payload"])
+    assert payload["session_id"] == sid
+
+
+def test_resolve_job_marks_resolved(store):
+    sid = store.add_node("session", "Resolve test")
+    store.queue_consolidation(sid, "summary")
+    jobs = store.get_pending_jobs()
+    store.resolve_job(jobs[0]["id"])
+    remaining = store.get_pending_jobs()
+    assert len(remaining) == 0
+
+
+def test_get_session_facts(store):
+    sid = store.add_node("session", "Fact session")
+    f1 = store.add_node("fact", "water is wet", session_id=sid)
+    f2 = store.add_node("decision", "chose postgres", session_id=sid)
+    # outcomes should not be included
+    store.add_node("outcome", "done", session_id=sid)
+    facts = store.get_session_facts(sid)
+    ids = [f["id"] for f in facts]
+    assert f1 in ids
+    assert f2 in ids
+    assert len(ids) == 2
+
+
+def test_consolidate_deduplicates_near_identical(store):
+    from nervapack.memory.consolidate import RuleBasedConsolidator
+    sid = store.add_node("session", "Dedup session")
+    store.queue_consolidation(sid, "session summary")
+    # Two near-identical facts (Jaccard > 0.9): same sentence, one extra common word
+    store.add_node("fact", "The database should use postgres for all environments consistently", session_id=sid)
+    import time; time.sleep(0.01)
+    store.add_node("fact", "The database should use postgres for all environments consistently", session_id=sid)
+    consolidator = RuleBasedConsolidator(store)
+    result = consolidator.process_pending()
+    assert result["jobs"] == 1
+    assert result["tombstoned"] == 1
+
+
+def test_consolidate_distinct_facts_preserved(store):
+    from nervapack.memory.consolidate import RuleBasedConsolidator
+    sid = store.add_node("session", "Distinct session")
+    store.queue_consolidation(sid, "summary")
+    store.add_node("fact", "Use postgres for the database layer", session_id=sid)
+    store.add_node("fact", "All API endpoints require JWT authentication tokens", session_id=sid)
+    consolidator = RuleBasedConsolidator(store)
+    result = consolidator.process_pending()
+    assert result["tombstoned"] == 0
+
+
+# ── Phase 2: TOUCHES / reverse lookup ──────────────────────────────────────────
+
+def test_touches_for_file(store):
+    nid = store.add_node("decision", "Use async handlers")
+    eid = store.add_node("entity", "handler")
+    store.add_edge(nid, eid, "TOUCHES", data={
+        "file_path": "src/app.py",
+        "start_line": 10,
+        "end_line": 30,
+        "graph_node_id": "function:src/app.py:handler:10",
+    })
+    hits = store.get_touches_for_file("src/app.py")
+    assert any(h["id"] == nid for h in hits)
+
+
+def test_touches_for_file_with_line(store):
+    nid = store.add_node("fact", "Handler is async")
+    eid = store.add_node("entity", "my_handler")
+    store.add_edge(nid, eid, "TOUCHES", data={
+        "file_path": "src/handlers.py",
+        "start_line": 5,
+        "end_line": 25,
+        "graph_node_id": "function:src/handlers.py:my_handler:5",
+    })
+    # Line within range
+    hits = store.get_touches_for_file("src/handlers.py", line=15)
+    assert any(h["id"] == nid for h in hits)
+    # Line outside range — should not match
+    hits2 = store.get_touches_for_file("src/handlers.py", line=100)
+    assert not any(h["id"] == nid for h in hits2)
+
+
+def test_touches_from_node(store):
+    nid = store.add_node("decision", "refactor this")
+    eid = store.add_node("entity", "Refactorer")
+    code_loc = {"graph_node_id": "class:src/x.py:Refactorer:1", "file_path": "src/x.py", "start_line": 1, "end_line": 50}
+    store.add_edge(nid, eid, "TOUCHES", data=code_loc)
+    locs = store.get_touches_from_node(nid)
+    assert len(locs) == 1
+    assert locs[0]["file_path"] == "src/x.py"

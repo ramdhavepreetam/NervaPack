@@ -812,7 +812,7 @@ memory_recall("auth", as_of=...)  → returns d_aaa only (point-in-time)
 memory_timeline("auth")           → returns both (d_aaa marked [superseded])
 ```
 
-### MCP Tools (12 total)
+### MCP Tools (15 total)
 
 | Tool | Purpose |
 |------|---------|
@@ -822,12 +822,15 @@ memory_timeline("auth")           → returns both (d_aaa marked [superseded])
 | `memory_about` | Entity dossier: all current facts/decisions linked to one entity |
 | `memory_why` | Explain a decision: rationale, rejected alternatives, caused outcomes |
 | `memory_timeline` | Chronological trace including superseded versions |
-| `memory_end_session` | Close session with an outcome summary |
+| `memory_end_session` | Close session with an outcome summary + queues consolidation |
 | `memory_forget` | Tombstone (soft) or hard-purge nodes |
 | `memory_verify` | `confirm` → confidence +0.1; `refute` → close + confidence ×0.5 |
 | `memory_list_sessions` | List all sessions with node counts |
 | `memory_clear_session` | Delete a session and all its nodes |
 | `memory_stats` | Node counts, DB size, top entities by degree |
+| `memory_for_code` | Memories that TOUCH a source file (optionally at a line) |
+| `memory_to_code` | Code locations a memory node TOUCHES (file, line range, type) |
+| `memory_import` | Bulk-seed memory from a JSON array of node specs |
 
 ### Recall Pipeline
 
@@ -853,6 +856,9 @@ nervapack-memory show f_0019f2...                 # inspect a node
 nervapack-memory forget --node-id f_0019f2...    # tombstone
 nervapack-memory forget --entity old_svc --purge # hard-delete
 nervapack-memory export --out dump.json           # JSON dump
+nervapack-memory import seed.json                 # bulk seed from JSON file
+nervapack-memory consolidate                      # deduplicate pending session facts
+nervapack-memory consolidate --dry-run            # preview without changes
 ```
 
 ### Storage

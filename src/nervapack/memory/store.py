@@ -637,3 +637,99 @@ class MemoryStore:
             f"SELECT id FROM mem_nodes WHERE {where}", params
         ).fetchall()
         return [dict(r) for r in rows]
+
+    # ── Consolidation queue ─────────────────────────────────────────────────────
+
+    def queue_consolidation(self, session_id: str, summary: str) -> str:
+        """Write a consolidation job to mem_review_queue; return its id."""
+        conn = self._get_conn()
+        jid = f"rq_{uuid.uuid4().hex[:16]}"
+        conn.execute(
+            "INSERT INTO mem_review_queue (id, created_at, kind, payload, resolved) VALUES (?,?,?,?,0)",
+            (jid, _now_iso(), "session_close", json.dumps({"session_id": session_id, "summary": summary})),
+        )
+        conn.commit()
+        return jid
+
+    def get_pending_jobs(self, limit: int = 100) -> list[dict[str, Any]]:
+        """Return unresolved consolidation jobs, oldest first."""
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT * FROM mem_review_queue WHERE resolved=0 ORDER BY created_at ASC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def resolve_job(self, job_id: str) -> None:
+        """Mark a consolidation job as resolved."""
+        conn = self._get_conn()
+        conn.execute("UPDATE mem_review_queue SET resolved=1 WHERE id=?", (job_id,))
+        conn.commit()
+
+    def get_session_facts(self, session_id: str) -> list[dict[str, Any]]:
+        """Return non-tombstoned fact/decision/procedure/preference nodes for a session."""
+        conn = self._get_conn()
+        rows = conn.execute(
+            """
+            SELECT * FROM mem_nodes
+            WHERE session_id = ?
+              AND kind IN ('fact','decision','procedure','preference')
+              AND tombstoned = 0
+              AND namespace = ?
+            ORDER BY recorded_at ASC
+            """,
+            (session_id, self.namespace),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ── TOUCHES / code graph reverse lookup ──────────────────────────────────────
+
+    def get_touches_for_file(
+        self, file_path: str, line: int | None = None
+    ) -> list[dict[str, Any]]:
+        """Return memory nodes that TOUCHES a given file (optionally at a line)."""
+        conn = self._get_conn()
+        if line is None:
+            rows = conn.execute(
+                """
+                SELECT n.*, e.data AS touches_data
+                FROM mem_edges e
+                JOIN mem_nodes n ON n.id = e.src
+                WHERE e.kind = 'TOUCHES'
+                  AND json_extract(e.data, '$.file_path') = ?
+                  AND n.tombstoned = 0
+                  AND n.namespace = ?
+                """,
+                (file_path, self.namespace),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT n.*, e.data AS touches_data
+                FROM mem_edges e
+                JOIN mem_nodes n ON n.id = e.src
+                WHERE e.kind = 'TOUCHES'
+                  AND json_extract(e.data, '$.file_path') = ?
+                  AND CAST(json_extract(e.data, '$.start_line') AS INTEGER) <= ?
+                  AND CAST(json_extract(e.data, '$.end_line') AS INTEGER) >= ?
+                  AND n.tombstoned = 0
+                  AND n.namespace = ?
+                """,
+                (file_path, line, line, self.namespace),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_touches_from_node(self, node_id: str) -> list[dict[str, Any]]:
+        """Return code-graph locations that this memory node TOUCHES."""
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT data FROM mem_edges WHERE src = ? AND kind = 'TOUCHES'",
+            (node_id,),
+        ).fetchall()
+        result = []
+        for r in rows:
+            try:
+                result.append(json.loads(r["data"] or "{}"))
+            except Exception:
+                pass
+        return result

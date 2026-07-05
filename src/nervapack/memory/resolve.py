@@ -2,8 +2,12 @@
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING, Any
 
 from .store import MemoryStore
+
+if TYPE_CHECKING:
+    pass  # graph type is NetworkX DiGraph, avoid import at runtime
 
 
 def _to_snake(name: str) -> str:
@@ -84,9 +88,39 @@ def _find_entity(store: MemoryStore, name: str) -> str | None:
     return None
 
 
-# Phase 2 stub: embedding-tier entity resolution
+def match_code_entity(graph: "Any", entity_name: str) -> "dict | None":
+    """
+    Search a NetworkX code graph for a node whose name matches entity_name.
+
+    Tries: exact name match, snake_case, and normalised form.
+    Returns {graph_node_id, file_path, start_line, end_line} or None.
+    """
+    if graph is None:
+        return None
+    needle_snake = _to_snake(entity_name.strip())
+    needle_norm = _normalise(entity_name.strip())
+    for node_id, attrs in graph.nodes(data=True):
+        raw_name = attrs.get("name", "")
+        if not raw_name:
+            continue
+        if (
+            raw_name.lower() == entity_name.strip().lower()
+            or _to_snake(raw_name) == needle_snake
+            or _normalise(raw_name) == needle_norm
+        ):
+            return {
+                "graph_node_id": node_id,
+                "file_path": attrs.get("file_path", ""),
+                "start_line": attrs.get("start_line"),
+                "end_line": attrs.get("end_line"),
+                "code_type": attrs.get("type", ""),
+            }
+    return None
+
+
+# Placeholder for future embedding-tier entity resolution
 class EmbeddingResolver:
-    """Placeholder. Phase 2 will use sentence-transformers + sqlite-vec here."""
+    """Placeholder. Future versions will use sentence-transformers + sqlite-vec here."""
 
     def resolve(self, name: str) -> str | None:  # pragma: no cover
-        raise NotImplementedError("EmbeddingResolver is a Phase 2 feature")
+        raise NotImplementedError("EmbeddingResolver is a future feature")

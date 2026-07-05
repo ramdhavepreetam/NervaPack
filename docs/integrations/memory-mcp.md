@@ -1,6 +1,6 @@
 # Memory MCP Server
 
-`nervapack-memory-mcp` is an MCP server that exposes **12 tools** for storing and recalling structured agent memory. Any MCP-compatible client — Claude Code, Cursor, or a custom agent — can use it to persist facts, decisions, and outcomes across sessions.
+`nervapack-memory-mcp` is an MCP server that exposes **15 tools** for storing and recalling structured agent memory. Any MCP-compatible client — Claude Code, Cursor, or a custom agent — can use it to persist facts, decisions, and outcomes across sessions.
 
 !!! tip "Primary use case: conversation context extender"
     Call `memory_recall("project context")` at the start of every new chat. Get a complete project briefing — 30 days of decisions and conventions — in under 200 tokens. No more re-pasting architecture docs. See the [Context Extender guide](../user-guide/concepts/context-extender.md) for the full workflow and seeding instructions.
@@ -295,7 +295,7 @@ Close the current session and store an outcome summary.
 
 1. Sets `valid_until = now` on the current session node.
 2. Creates an `outcome` node with the summary text, linked via `OCCURRED_IN`.
-3. Queues consolidation (Phase 2, currently a no-op).
+3. Queues a consolidation job (processed later via `nervapack-memory consolidate`).
 4. Resets the in-process session so the next tool call opens a fresh one.
 
 **Example:**
@@ -496,6 +496,109 @@ Delete a session and every node that belongs to it.
 
 ---
 
+### `memory_for_code`
+
+Return memories that are linked to a source file via TOUCHES edges.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file_path` | string | Yes | Relative path to source file (e.g. `src/auth/jwt.py`) |
+| `line` | int | No | Line number — narrows results to functions/classes that contain this line |
+
+**Returns:** Markdown string listing all memory nodes that touch the file.
+
+**Example:**
+
+```python
+# All memories about a file
+memory_for_code("src/nervapack/memory/store.py")
+
+# Memories about the specific function at line 172
+memory_for_code("src/nervapack/memory/store.py", line=172)
+```
+
+!!! note "Requires TOUCHES edges"
+    TOUCHES edges are created automatically by `memory_store` when entity names match code graph nodes. Build the code graph first with `nervapack build`.
+
+---
+
+### `memory_to_code`
+
+Return code-graph locations that a memory node TOUCHES.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `memory_id` | string | Yes | Node ID (e.g. `d_0019f2...`) |
+
+**Returns:** List of `{graph_node_id, file_path, start_line, end_line, code_type}` dicts. Empty list if no TOUCHES edges.
+
+**Example:**
+
+```python
+memory_to_code("d_0019f2...")
+# Returns: [{"graph_node_id": "function:src/auth.py:verify_token:42",
+#            "file_path": "src/auth.py", "start_line": 42, "end_line": 61,
+#            "code_type": "function"}]
+```
+
+---
+
+### `memory_import`
+
+Bulk-import memory nodes from a list of dicts. Use this to seed memory from existing notes, architecture decisions, or export files.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `nodes` | list[dict] | Yes | Array of node specs. Each must have `content` and `kind`. |
+
+**Node spec fields:**
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `content` | Yes | The fact, decision, or note to store |
+| `kind` | Yes | One of the 8 valid kinds |
+| `entities` | No | Entity names to link via ABOUT edges |
+| `confidence` | No | 0.0–1.0, default `1.0` |
+| `valid_from` | No | ISO-8601 timestamp |
+| `rationale` | No | Why — surfaces in `memory_why` |
+| `alternatives_rejected` | No | Dropped options — surfaces in `memory_why` |
+| `session_id` | No | Attach to a specific session |
+
+**Returns:**
+
+```json
+{
+  "imported": 3,
+  "node_ids": ["d_...", "f_...", "pr_..."],
+  "created_entity_ids": ["e_..."],
+  "errors": []
+}
+```
+
+**Examples:**
+
+```python
+# Import decisions from a design doc
+memory_import([
+    {"content": "Use PostgreSQL for all transactional data", "kind": "decision",
+     "entities": ["postgres"], "confidence": 1.0,
+     "rationale": "ACID compliance required for payment flows"},
+    {"content": "All APIs must return ISO-8601 timestamps in UTC", "kind": "preference"},
+    {"content": "Rate limiting: 1000 req/min per API key", "kind": "fact",
+     "entities": ["api_gateway"]},
+])
+```
+
+Also accepts the full export format `{"nodes": [...], "edges": [...]}` from `nervapack-memory export` — only nodes are imported; edges are rebuilt through entity resolution.
+
+---
+
 ## Recommended Agent Workflow
 
 ```
@@ -522,9 +625,12 @@ Session start
 | `memory_start_session` | First thing — name the session for the task |
 | `memory_recall` | At session start — load project context and topic context |
 | `memory_store` | Any decision, fact, convention, or outcome worth preserving |
+| `memory_import` | Seeding memory from notes, ADRs, or export files (one-time or periodic) |
 | `memory_about` | When asked about a specific service or component |
 | `memory_why` | When asked to justify or explain a past decision |
 | `memory_timeline` | When the user asks about the history of something |
+| `memory_for_code` | When asked what decisions are related to a file or function |
+| `memory_to_code` | When asked to navigate from a memory to its source location |
 | `memory_verify` | When a prior fact is confirmed or contradicted by new evidence |
 | `memory_forget` | When explicitly asked to forget something |
 | `memory_end_session` | When a task or conversation ends |

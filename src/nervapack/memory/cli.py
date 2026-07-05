@@ -225,6 +225,87 @@ def cmd_forget(
         console.print(f"[yellow]Tombstoned {count} node(s).[/yellow]")
 
 
+@app.command("consolidate")
+def cmd_consolidate(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be tombstoned without doing it"),
+    db: Optional[str] = typer.Option(None, "--db"),
+) -> None:
+    """Process pending consolidation jobs: deduplicate near-identical facts."""
+    from .consolidate import RuleBasedConsolidator
+    store = MemoryStore(db_path=db)
+    consolidator = RuleBasedConsolidator(store)
+    result = consolidator.process_pending(dry_run=dry_run)
+    prefix = "[yellow](dry run)[/yellow] " if dry_run else ""
+    console.print(
+        f"{prefix}Processed [cyan]{result['jobs']}[/cyan] job(s), "
+        f"tombstoned [red]{result['tombstoned']}[/red] duplicate(s)."
+    )
+
+
+@app.command("import")
+def cmd_import(
+    file: str = typer.Argument(..., help="JSON file to import (.json array or export format)"),
+    db: Optional[str] = typer.Option(None, "--db"),
+) -> None:
+    """Import memory nodes from a JSON file."""
+    from .resolve import resolve_entities
+    path = Path(file)
+    if not path.exists():
+        console.print(f"[red]File not found: {file}[/red]")
+        raise typer.Exit(1)
+
+    raw = json.loads(path.read_text())
+    # Accept both plain list and export format {"nodes": [...], "edges": [...]}
+    nodes: list[dict] = raw if isinstance(raw, list) else raw.get("nodes", [])
+
+    if not nodes:
+        console.print("[yellow]No nodes found in file.[/yellow]")
+        return
+
+    store = MemoryStore(db_path=db)
+    valid_kinds = {"session", "fact", "decision", "action", "outcome", "entity", "procedure", "preference"}
+
+    table = Table(title=f"Importing from {path.name}")
+    table.add_column("ID", style="dim", no_wrap=True)
+    table.add_column("Kind", style="cyan")
+    table.add_column("Content", style="white")
+
+    imported = 0
+    errors = 0
+    for i, spec in enumerate(nodes):
+        content = spec.get("content", "")
+        kind = spec.get("kind", "fact")
+        if not content or kind not in valid_kinds:
+            console.print(f"[red]Skip [{i}]: bad content/kind ({kind!r})[/red]")
+            errors += 1
+            continue
+
+        data: dict = {}
+        if spec.get("rationale"):
+            data["rationale"] = spec["rationale"]
+        if spec.get("alternatives_rejected"):
+            data["alternatives_rejected"] = spec["alternatives_rejected"]
+
+        nid = store.add_node(
+            kind=kind,
+            content=content,
+            confidence=float(spec.get("confidence", 1.0)),
+            valid_from=spec.get("valid_from"),
+            session_id=spec.get("session_id"),
+            data=data if data else None,
+        )
+        entity_names: list[str] = spec.get("entities") or []
+        linked, _ = resolve_entities(store, entity_names)
+        for eid in linked:
+            store.add_edge(nid, eid, "ABOUT")
+
+        table.add_row(nid, kind, content[:70])
+        imported += 1
+
+    console.print(table)
+    console.print(f"[green]✓[/green] Imported {imported} node(s)." + (f"  [red]{errors} skipped.[/red]" if errors else ""))
+
+
 @app.command("export")
 def cmd_export(
     out: Optional[str] = typer.Option(None, "--out", "-o", help="Output file (default stdout)"),

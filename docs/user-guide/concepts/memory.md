@@ -45,16 +45,16 @@ Node IDs are time-sortable: `{prefix}_{13-hex-timestamp}{16-hex-random}`.
 | `CONTRADICTS` | Node conflicts with another |
 | `CAUSED` | Decision or action produced this outcome |
 | `DERIVED_FROM` | Fact is inferred from another |
-| `TOUCHES` | (Phase 3) Memory links to a live code node |
+| `TOUCHES` | Memory node is about a named entity that maps to a code graph node |
 
 ### Schema Overview
 
 ```sql
-mem_nodes      -- all knowledge nodes (bi-temporal, namespaced)
-mem_edges      -- typed directed edges
-mem_aliases    -- entity name aliases (COLLATE NOCASE)
-mem_review_queue -- Phase 2 consolidation queue (schema present, not yet active)
-mem_fts        -- FTS5 external-content virtual table (synced via triggers)
+mem_nodes        -- all knowledge nodes (bi-temporal, namespaced)
+mem_edges        -- typed directed edges
+mem_aliases      -- entity name aliases (COLLATE NOCASE)
+mem_review_queue -- consolidation queue (populated on session close, processed by `consolidate` CLI)
+mem_fts          -- FTS5 external-content virtual table (synced via triggers)
 ```
 
 The full DDL is in `src/nervapack/memory/schema.sql`.
@@ -201,15 +201,24 @@ Recall returns atomic assertions — 8–30 tokens each — with explicit proven
 
 All storage, retrieval, and scoring is local. No embeddings are generated at query time (FTS5 handles text search). This keeps latency low and the system fully offline.
 
-### Phase 2 (Not Yet Active)
+### Rule-Based Consolidation (v0.5.0)
 
-`NoopConsolidator` is a stub for a future consolidation worker that will use an LLM to merge session transcripts into durable facts. `mem_review_queue` is schema-present but not yet processed. The `EmbeddingResolver` stub exists for a future entity-resolution path that uses vector similarity. Neither generates LLM calls in the current (Phase 1) implementation.
+When a session closes via `memory_end_session`, a consolidation job is written to `mem_review_queue`. The `nervapack-memory consolidate` CLI command processes pending jobs: it deduplicates near-identical facts within each session using Jaccard word-overlap (threshold > 0.9) and tombstones the older duplicate. Future versions may use an LLM for semantic-level deduplication — the `Consolidator` protocol is designed for this.
+
+### TOUCHES Bridge (v0.5.0)
+
+When `memory_store` is called with entity names that match nodes in the code graph (`.nervapack/graph.graphml`), a `TOUCHES` edge is created from the memory node to the entity. The entity's `data` JSON is updated with `file_path`, `start_line`, `end_line`, and `graph_node_id`. This enables:
+
+- `memory_for_code(file_path)` — "What decisions were made about this file?"
+- `memory_to_code(memory_id)` — "Where in the code is this decision anchored?"
+
+The code graph is loaded lazily when the first matching entity is stored. If the graph is not present, TOUCHES edges are silently skipped (memory works without the code graph).
 
 ---
 
 ## See Also
 
 - [Context Extender guide](context-extender.md) — how to use memory as a conversation context extender, seeding workflow, Claude prompt template
-- [Memory MCP Server](../../integrations/memory-mcp.md) — 12 MCP tools exposed to Claude Code / Cursor
-- [memory CLI](../commands/memory.md) — `init`, `stats`, `search`, `show`, `forget`, `export`
+- [Memory MCP Server](../../integrations/memory-mcp.md) — 15 MCP tools exposed to Claude Code / Cursor
+- [memory CLI](../commands/memory.md) — `init`, `stats`, `search`, `show`, `forget`, `export`, `consolidate`, `import`
 - [Architecture](architecture.md) — how memory relates to the code graph
