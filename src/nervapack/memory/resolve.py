@@ -1,7 +1,15 @@
 """Entity resolution: exact match → alias (case-insensitive) → create new entity node."""
 from __future__ import annotations
 
+import re
+
 from .store import MemoryStore
+
+
+def _to_snake(name: str) -> str:
+    """CamelCase / PascalCase → snake_case. 'AuthService' → 'auth_service'."""
+    s1 = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
+    return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s1).lower()
 
 
 def resolve_entities(
@@ -25,18 +33,17 @@ def resolve_entities(
         if eid:
             linked.append(eid)
         else:
-            # Create new entity node
-            slug = name.strip().lower().replace(" ", "_")
             eid = store.add_node(
                 kind="entity",
                 content=name.strip(),
                 data={"entity_type": "unknown"},
                 session_id=session_id,
             )
-            # Register multiple alias forms for case-insensitive lookup
-            store.add_alias(eid, name.strip())         # original
-            store.add_alias(eid, slug)                  # snake_case
-            store.add_alias(eid, _normalise(name))      # normalised (no separators)
+            # Register four alias forms for case-insensitive and cross-convention lookup
+            store.add_alias(eid, name.strip())              # original
+            store.add_alias(eid, name.strip().lower().replace(" ", "_"))  # basic slug
+            store.add_alias(eid, _to_snake(name.strip()))  # CamelCase → snake_case
+            store.add_alias(eid, _normalise(name))          # no-separator normalised
             created.append(eid)
             linked.append(eid)
 
@@ -56,13 +63,18 @@ def _find_entity(store: MemoryStore, name: str) -> str | None:
     if eid:
         return eid
 
-    # 2. Normalised alias lookup (AuthService → authservice == auth_service normalised)
+    # 2. CamelCase → snake_case alias lookup
+    eid = store.find_entity_by_alias(_to_snake(clean))
+    if eid:
+        return eid
+
+    # 3. Normalised alias lookup (AuthService → authservice == auth_service normalised)
     norm = _normalise(clean)
     eid = store.find_entity_by_alias_normalised(norm)
     if eid:
         return eid
 
-    # 3. FTS match restricted to entity kind
+    # 4. FTS match restricted to entity kind
     results = store.fts_search(name, limit=3, kinds=["entity"])
     for r in results:
         content = (r.get("content") or "").lower()

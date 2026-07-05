@@ -30,15 +30,28 @@ def mcp_app():
 
 async def _call_tool(client, name, args=None):
     result = await client.call_tool(name, args or {})
+    # FastMCP may return structuredContent for list/dict types
+    if result.structuredContent is not None:
+        return result.structuredContent.get("result", result.structuredContent)
     # Unwrap TextContent
     contents = result.content
-    if contents and hasattr(contents[0], "text"):
+    if not contents:
+        return None
+    if len(contents) == 1 and hasattr(contents[0], "text"):
         text = contents[0].text
         try:
             return json.loads(text)
         except (json.JSONDecodeError, TypeError):
             return text
-    return contents
+    # Multiple TextContent items — try to parse each and return as list
+    parsed = []
+    for c in contents:
+        if hasattr(c, "text"):
+            try:
+                parsed.append(json.loads(c.text))
+            except (json.JSONDecodeError, TypeError):
+                parsed.append(c.text)
+    return parsed if len(parsed) > 1 else (parsed[0] if parsed else contents)
 
 
 @pytest.mark.asyncio
@@ -268,3 +281,121 @@ async def test_cross_session_persistence(tmp_path, monkeypatch):
         })
         assert isinstance(result, str)
         assert "JWT" in result
+
+
+@pytest.mark.asyncio
+async def test_memory_list_sessions(mcp_app):
+    async with create_connected_server_and_client_session(mcp_app) as client:
+        await _call_tool(client, "memory_store", {"content": "some fact", "kind": "fact"})
+        result = await _call_tool(client, "memory_list_sessions", {})
+        assert isinstance(result, list)
+        assert len(result) >= 1
+        session = result[0]
+        assert "id" in session
+        assert "node_count" in session
+
+
+@pytest.mark.asyncio
+async def test_memory_clear_session_tombstone(mcp_app):
+    async with create_connected_server_and_client_session(mcp_app) as client:
+        # Create a session by storing a fact
+        store_result = await _call_tool(client, "memory_store", {"content": "clearable fact", "kind": "fact"})
+        sessions = await _call_tool(client, "memory_list_sessions", {})
+        sid = sessions[0]["id"]
+        clear_result = await _call_tool(client, "memory_clear_session", {"session_id": sid, "purge": False})
+        assert clear_result["count"] >= 1
+        assert clear_result["mode"] == "tombstone"
+        # Session should now be tombstoned
+        sessions_after = await _call_tool(client, "memory_list_sessions", {})
+        tombstoned = next((s for s in sessions_after if s["id"] == sid), None)
+        if tombstoned:
+            assert tombstoned["tombstoned"] == 1
+
+
+@pytest.mark.asyncio
+async def test_memory_verify_refute_excludes_from_recall(mcp_app):
+    """Refuted nodes should be excluded from recall (valid_until is set to now)."""
+    async with create_connected_server_and_client_session(mcp_app) as client:
+        store_result = await _call_tool(client, "memory_store", {
+            "content": "refutable_fact_unique_xyz: some claim that will be refuted",
+            "kind": "fact",
+            "confidence": 0.8,
+        })
+        node_id = store_result["node_id"]
+        # Refute the node
+        await _call_tool(client, "memory_verify", {"node_id": node_id, "status": "refute"})
+        # Recall should not return the node content (valid_until is now set)
+        result = await _call_tool(client, "memory_recall", {
+            "query": "refutable_fact_unique_xyz",
+            "budget_tokens": 500,
+        })
+        # The query phrase appears in the header; confirm the *node content* is absent
+        assert "some claim that will be refuted" not in result
+
+
+@pytest.mark.asyncio
+async def test_memory_about_normalised_alias(mcp_app):
+    """memory_about('AuthService') should find entity stored as 'auth_service'."""
+    async with create_connected_server_and_client_session(mcp_app) as client:
+        await _call_tool(client, "memory_store", {
+            "content": "AuthService handles token validation",
+            "kind": "fact",
+            "entities": ["AuthService"],
+        })
+        # Lookup via snake_case form
+        result = await _call_tool(client, "memory_about", {"entity": "auth_service"})
+        assert isinstance(result, str)
+        assert "AuthService" in result or "token validation" in result
+
+
+@pytest.mark.asyncio
+async def test_memory_start_session(mcp_app):
+    async with create_connected_server_and_client_session(mcp_app) as client:
+        result = await _call_tool(client, "memory_start_session", {"name": "JWT auth refactor"})
+        assert "session_id" in result
+        assert result["created"] is True
+        sid = result["session_id"]
+        # Second call should return the existing session
+        result2 = await _call_tool(client, "memory_start_session", {"name": "different name"})
+        assert result2["session_id"] == sid
+        assert result2["created"] is False
+
+
+@pytest.mark.asyncio
+async def test_memory_store_rationale(mcp_app):
+    """memory_store with rationale/alternatives should surface in memory_why."""
+    async with create_connected_server_and_client_session(mcp_app) as client:
+        store_result = await _call_tool(client, "memory_store", {
+            "content": "Chose JWT for authentication rationale_test_unique",
+            "kind": "decision",
+            "entities": ["auth_service"],
+            "rationale": "Stateless, scales horizontally",
+            "alternatives_rejected": ["session cookies", "API keys"],
+        })
+        node_id = store_result["node_id"]
+        why_result = await _call_tool(client, "memory_why", {"decision_ref": node_id})
+        assert "Stateless" in why_result
+        assert "session cookies" in why_result
+
+
+@pytest.mark.asyncio
+async def test_memory_recall_min_confidence(mcp_app):
+    """min_confidence parameter filters out low-confidence nodes."""
+    async with create_connected_server_and_client_session(mcp_app) as client:
+        await _call_tool(client, "memory_store", {
+            "content": "high confidence system design fact confidence_filter_test",
+            "kind": "fact",
+            "confidence": 0.9,
+        })
+        await _call_tool(client, "memory_store", {
+            "content": "low confidence system design fact confidence_filter_test",
+            "kind": "fact",
+            "confidence": 0.1,
+        })
+        result = await _call_tool(client, "memory_recall", {
+            "query": "confidence_filter_test",
+            "budget_tokens": 500,
+            "min_confidence": 0.5,
+        })
+        assert "high confidence" in result
+        assert "low confidence" not in result

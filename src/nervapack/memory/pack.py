@@ -179,11 +179,13 @@ def pack(
 def pack_timeline(
     nodes: list[dict[str, Any]],
     topic: str,
+    budget_tokens: int = 1000,
     counter: TokenCounter | None = None,
 ) -> str:
-    """Render a chronological timeline including superseded nodes."""
-    _ = counter or get_token_counter()  # reserved for future budget-cap on timeline
-    lines = [f"## Memory timeline: {topic!r}\n"]
+    """Render a chronological timeline including superseded nodes, capped to budget_tokens."""
+    tc = counter or get_token_counter()
+    header = f"## Memory timeline: {topic!r}\n"
+    lines: list[str] = []
     for node in nodes:
         nid = node.get("id", "?")
         date = _fmt_date(node.get("valid_from") or node.get("recorded_at"))
@@ -192,4 +194,7 @@ def pack_timeline(
         sup = node.get("_superseded_by")
         marker = f" [superseded by {sup}]" if sup else ""
         lines.append(f"- [{nid}] {date} · conf {conf:.2f}{marker} — {content}")
-    return "\n".join(lines)
+    # Enforce budget: drop from oldest (front) until it fits
+    while lines and tc.count(header + "\n".join(lines)) > budget_tokens:
+        lines.pop(0)
+    return header + "\n".join(lines)

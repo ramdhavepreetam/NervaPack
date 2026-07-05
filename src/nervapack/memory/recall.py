@@ -43,6 +43,7 @@ def recall(
     kinds: list[str] | None = None,
     as_of: str | None = None,
     hops: int = 1,
+    min_confidence: float = 0.0,
     counter: TokenCounter | None = None,
 ) -> str:
     """Run the full recall pipeline and return a packed markdown block."""
@@ -108,6 +109,7 @@ def recall(
         nid: (node, rel)
         for nid, (node, rel) in candidates.items()
         if nid in valid_ids
+        and (node.get("confidence") or 1.0) >= min_confidence
     }
 
     # 4. Score and sort

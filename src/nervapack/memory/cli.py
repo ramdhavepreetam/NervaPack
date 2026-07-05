@@ -120,6 +120,68 @@ def cmd_delete_session(
         console.print(f"[yellow]Tombstoned {result['count']} node(s).[/yellow]")
 
 
+@app.command("start-session")
+def cmd_start_session(
+    name: str = typer.Argument(..., help="Human-readable session name"),
+    db: Optional[str] = typer.Option(None, "--db"),
+) -> None:
+    """Open a named session and print its ID."""
+    from .store import _now_iso
+    store = MemoryStore(db_path=db)
+    sid = store.add_node(
+        kind="session",
+        content=name.strip(),
+        data={"started_at": _now_iso(), "agent_id": "cli"},
+    )
+    console.print(f"[green]Session opened:[/green] {sid}")
+    console.print(f"  Pass to memory_store with --session-id {sid}")
+
+
+@app.command("show")
+def cmd_show(
+    node_id: str = typer.Argument(..., help="Node ID to inspect"),
+    db: Optional[str] = typer.Option(None, "--db"),
+) -> None:
+    """Print a single node as JSON."""
+    store = MemoryStore(db_path=db)
+    node = store.get_node(node_id)
+    if node is None:
+        console.print(f"[red]Node {node_id!r} not found.[/red]")
+        raise typer.Exit(1)
+    print(json.dumps(dict(node), indent=2, default=str))
+
+
+@app.command("search")
+def cmd_search(
+    query: str = typer.Argument(..., help="Search query (FTS5)"),
+    kind: Optional[str] = typer.Option(None, "--kind", "-k", help="Filter by node kind"),
+    limit: int = typer.Option(10, "--limit", "-l"),
+    db: Optional[str] = typer.Option(None, "--db"),
+) -> None:
+    """Run a full-text search and print results as a table."""
+    store = MemoryStore(db_path=db)
+    kinds = [kind] if kind else None
+    results = store.fts_search(query, limit=limit, kinds=kinds)
+    if not results:
+        console.print("[yellow]No results.[/yellow]")
+        return
+    table = Table(title=f'Search: "{query}"')
+    table.add_column("ID", style="dim", no_wrap=True)
+    table.add_column("Kind", style="cyan")
+    table.add_column("Conf", justify="right")
+    table.add_column("Date", width=10)
+    table.add_column("Content", style="white")
+    for r in results:
+        table.add_row(
+            r.get("id", ""),
+            r.get("kind", ""),
+            f"{r.get('confidence', 1.0):.2f}",
+            (r.get("valid_from") or r.get("recorded_at") or "")[:10],
+            (r.get("content") or "")[:80],
+        )
+    console.print(table)
+
+
 @app.command("forget")
 def cmd_forget(
     node_id: Optional[str] = typer.Option(None, "--node-id", "-n"),

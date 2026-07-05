@@ -60,6 +60,34 @@ def _get_or_create_session() -> str:
     return _session_id
 
 
+# ── Tool 0: memory_start_session ──────────────────────────────────────────────
+
+@mcp.tool()
+def memory_start_session(name: str) -> dict[str, Any]:
+    """
+    Explicitly open a named session and return its ID.
+
+    Call this at the start of a task to give the session a meaningful name
+    (e.g. "JWT auth refactor", "Debugging payment flow"). The returned
+    session_id can be passed to memory_store to group nodes under this session.
+
+    If a session is already open for this server process, the existing session
+    is returned unchanged (use memory_end_session first to close it).
+
+    Example: memory_start_session("JWT auth refactor")
+    """
+    global _session_id
+    store = _get_store()
+    if _session_id is not None:
+        return {"session_id": _session_id, "created": False, "note": "existing session returned"}
+    _session_id = store.add_node(
+        kind="session",
+        content=name.strip(),
+        data={"started_at": _now_iso(), "agent_id": "default"},
+    )
+    return {"session_id": _session_id, "created": True}
+
+
 # ── Tool 1: memory_store ────────────────────────────────────────────────────────
 
 @mcp.tool()
@@ -71,6 +99,8 @@ def memory_store(
     valid_from: str | None = None,
     supersedes: str | None = None,
     session_id: str | None = None,
+    rationale: str | None = None,
+    alternatives_rejected: list[str] | None = None,
 ) -> dict[str, Any]:
     """
     Persist a memory node (fact, decision, outcome, procedure, preference, or action).
@@ -79,9 +109,13 @@ def memory_store(
     or creates a new entity node. Links them via ABOUT edges. If `supersedes`
     is provided, closes the old node's valid window and adds a SUPERSEDES edge.
 
+    Use `rationale` to record *why* the decision was made (shows in memory_why).
+    Use `alternatives_rejected` to record options that were considered but dropped.
+
     Example: memory_store("Chose JWT for auth — stateless scaling",
                           kind="decision", entities=["auth_service"],
-                          confidence=0.9, supersedes=None)
+                          confidence=0.9, rationale="Stateless, scales horizontally",
+                          alternatives_rejected=["session cookies", "API keys"])
 
     Returns: {node_id, linked_entity_ids, created_entity_ids}
     """
@@ -93,12 +127,19 @@ def memory_store(
     if kind not in valid_kinds:
         return {"error": f"Unknown kind {kind!r}. Valid: {sorted(valid_kinds)}"}
 
+    data: dict[str, Any] = {}
+    if rationale:
+        data["rationale"] = rationale
+    if alternatives_rejected:
+        data["alternatives_rejected"] = alternatives_rejected
+
     node_id = store.add_node(
         kind=kind,
         content=content,
         confidence=confidence,
         valid_from=valid_from,
         session_id=sid,
+        data=data if data else None,
     )
 
     linked, created = resolve_entities(store, entities or [], session_id=sid)
@@ -129,6 +170,7 @@ def memory_recall(
     kinds: list[str] | None = None,
     as_of: str | None = None,
     hops: int = 1,
+    min_confidence: float = 0.0,
 ) -> str:
     """
     Retrieve the most relevant memories for a query, packed into a token budget.
@@ -137,11 +179,12 @@ def memory_recall(
     relevance × recency × frequency × connectivity, and returns a markdown block
     guaranteed to stay within `budget_tokens`.
 
-    Example: memory_recall("why JWT for auth", budget_tokens=500)
+    Use `min_confidence` (0.0–1.0) to filter out low-confidence nodes.
+    Example: memory_recall("why JWT for auth", budget_tokens=500, min_confidence=0.7)
     """
     store = _get_store()
     return recall(store, query, budget_tokens=budget_tokens,
-                  kinds=kinds, as_of=as_of, hops=hops)
+                  kinds=kinds, as_of=as_of, hops=hops, min_confidence=min_confidence)
 
 
 # ── Tool 3: memory_about ───────────────────────────────────────────────────────

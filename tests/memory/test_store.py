@@ -131,3 +131,32 @@ def test_stats(store):
     assert s["kind_counts"].get("fact", 0) >= 1
     assert s["kind_counts"].get("decision", 0) >= 1
     assert s["db_size_bytes"] > 0
+
+
+def test_list_sessions(store):
+    sid = store.add_node("session", "Test session A")
+    store.add_node("fact", "A fact in session A", session_id=sid)
+    sessions = store.list_sessions()
+    assert any(s["id"] == sid for s in sessions)
+    found = next(s for s in sessions if s["id"] == sid)
+    assert found["node_count"] == 1
+    assert found["content"] == "Test session A"
+
+
+def test_delete_session_tombstone(store):
+    sid = store.add_node("session", "To be deleted")
+    nid = store.add_node("fact", "child of session", session_id=sid)
+    result = store.delete_session(sid, purge=False)
+    assert result["count"] >= 2  # session + child
+    assert result["mode"] == "tombstone"
+    # Both should be tombstoned
+    assert store.get_node(sid)["tombstoned"] == 1
+    assert store.get_node(nid)["tombstoned"] == 1
+
+
+def test_delete_session_purge(store):
+    sid = store.add_node("session", "Purge target")
+    nid = store.add_node("fact", "purge child", session_id=sid)
+    store.delete_session(sid, purge=True)
+    assert store.get_node(sid) is None
+    assert store.get_node(nid) is None

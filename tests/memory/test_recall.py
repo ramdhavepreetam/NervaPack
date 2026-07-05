@@ -85,3 +85,33 @@ def test_recall_timeline_includes_superseded(store):
     assert "old fact" in result
     assert "new fact" in result
     assert "superseded" in result
+
+
+def test_recall_confidence_filter(store):
+    """min_confidence filters out low-confidence nodes."""
+    store.add_node("fact", "high confidence fact alpha", confidence=0.9)
+    store.add_node("fact", "low confidence fact alpha", confidence=0.1)
+    result = recall(store, "confidence fact alpha", budget_tokens=500, min_confidence=0.5)
+    assert "high confidence" in result
+    assert "low confidence" not in result
+
+
+def test_recall_timeline_since_filter(store):
+    """recall_timeline with a future since= returns an empty timeline (recorded_at filter)."""
+    from nervapack.memory.recall import recall_timeline
+    store.add_node("fact", "some_since_fact unique_since_test")
+    # A future since= means no nodes recorded before it — timeline should be empty
+    result = recall_timeline(store, "unique_since_test", since="2099-01-01T00:00:00")
+    assert "some_since_fact" not in result
+
+
+def test_timeline_budget_cap(store):
+    """pack_timeline must respect 1000 token default budget."""
+    from nervapack.memory.recall import recall_timeline
+    from nervapack.memory.pack import CharTokenCounter
+    for i in range(30):
+        store.add_node("fact", f"Timeline budget fact {i}: some longer content about system design patterns and architecture decisions that add up quickly when there are many entries")
+    tc = CharTokenCounter()
+    result = recall_timeline(store, "budget fact", counter=tc)
+    tokens = tc.count(result)
+    assert tokens <= 1000, f"Timeline exceeded 1000 tokens: got {tokens}"
