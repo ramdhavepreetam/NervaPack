@@ -2,8 +2,21 @@ import typer
 from typing import Optional
 from rich.console import Console
 
-app = typer.Typer(help="NervaPack: Privacy-first, offline knowledge graph for developers.")
+from nervapack import __version__
+from nervapack._update_check import start as _start_update_check
+
+app = typer.Typer(
+    help="NervaPack: Privacy-first, offline knowledge graph for developers.",
+    no_args_is_help=True,
+)
 console = Console()
+
+
+@app.callback(invoke_without_command=True)
+def _callback(ctx: typer.Context) -> None:
+    """Run the update checker in the background on every CLI invocation."""
+    _start_update_check(__version__)
+
 
 @app.command()
 def init():

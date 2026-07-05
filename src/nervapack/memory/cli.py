@@ -12,10 +12,18 @@ try:
 except ImportError:
     raise ImportError("Run: pip install nervapack[memory]")
 
+from nervapack import __version__
+from nervapack._update_check import start as _start_update_check
 from .store import MemoryStore
 
-app = typer.Typer(name="nervapack-memory", help="NervaPack agent memory CLI.")
+app = typer.Typer(name="nervapack-memory", help="NervaPack agent memory CLI.", no_args_is_help=True)
 console = Console()
+
+
+@app.callback(invoke_without_command=True)
+def _callback(ctx: typer.Context) -> None:
+    """Run the update checker in the background on every CLI invocation."""
+    _start_update_check(__version__)
 
 
 @app.command("init")
