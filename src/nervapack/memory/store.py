@@ -651,13 +651,19 @@ class MemoryStore:
         conn.commit()
         return jid
 
-    def get_pending_jobs(self, limit: int = 100) -> list[dict[str, Any]]:
-        """Return unresolved consolidation jobs, oldest first."""
+    def get_pending_jobs(self, kind: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        """Return unresolved consolidation jobs, oldest first, optionally filtered by kind."""
         conn = self._get_conn()
-        rows = conn.execute(
-            "SELECT * FROM mem_review_queue WHERE resolved=0 ORDER BY created_at ASC LIMIT ?",
-            (limit,),
-        ).fetchall()
+        if kind:
+            rows = conn.execute(
+                "SELECT * FROM mem_review_queue WHERE resolved=0 AND kind=? ORDER BY created_at ASC LIMIT ?",
+                (kind, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM mem_review_queue WHERE resolved=0 ORDER BY created_at ASC LIMIT ?",
+                (limit,),
+            ).fetchall()
         return [dict(r) for r in rows]
 
     def resolve_job(self, job_id: str) -> None:
@@ -733,3 +739,41 @@ class MemoryStore:
             except Exception:
                 pass
         return result
+
+    def get_all_touches(self) -> list[dict[str, Any]]:
+        """Return all TOUCHES edges as (node_id, recorded_at, edge_data) dicts."""
+        conn = self._get_conn()
+        rows = conn.execute(
+            """
+            SELECT e.src AS node_id, n.recorded_at, e.data
+            FROM mem_edges e
+            JOIN mem_nodes n ON n.id = e.src
+            WHERE e.kind = 'TOUCHES'
+              AND n.tombstoned = 0
+              AND n.namespace = ?
+            """,
+            (self.namespace,),
+        ).fetchall()
+        result = []
+        for r in rows:
+            try:
+                edge_data = json.loads(r["data"] or "{}")
+            except Exception:
+                edge_data = {}
+            result.append({
+                "node_id": r["node_id"],
+                "recorded_at": r["recorded_at"],
+                **edge_data,
+            })
+        return result
+
+    def queue_staleness_job(self, payload: dict[str, Any]) -> str:
+        """Write a staleness-check result to mem_review_queue."""
+        conn = self._get_conn()
+        jid = f"rq_{uuid.uuid4().hex[:16]}"
+        conn.execute(
+            "INSERT INTO mem_review_queue (id, created_at, kind, payload, resolved) VALUES (?,?,?,?,0)",
+            (jid, _now_iso(), "staleness", json.dumps(payload)),
+        )
+        conn.commit()
+        return jid

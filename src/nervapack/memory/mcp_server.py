@@ -11,6 +11,9 @@ Or add to .mcp.json:
 from __future__ import annotations
 
 import json
+import os
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 try:
@@ -75,7 +78,7 @@ def _get_or_create_session() -> str:
 # ── Tool 0: memory_start_session ──────────────────────────────────────────────
 
 @mcp.tool()
-def memory_start_session(name: str) -> dict[str, Any]:
+def memory_start_session(name: str, namespace: str | None = None) -> dict[str, Any]:
     """
     Explicitly open a named session and return its ID.
 
@@ -85,11 +88,17 @@ def memory_start_session(name: str) -> dict[str, Any]:
 
     If a session is already open for this server process, the existing session
     is returned unchanged (use memory_end_session first to close it).
+    Use `namespace` to switch the active namespace before opening the session.
 
     Example: memory_start_session("JWT auth refactor")
     """
     global _session_id
     store = _get_store()
+    if namespace is not None:
+        ns = namespace.strip() or "default"
+        if ns != store.namespace:
+            store.namespace = ns
+            _session_id = None
     if _session_id is not None:
         return {"session_id": _session_id, "created": False, "note": "existing session returned"}
     _session_id = store.add_node(
@@ -97,7 +106,7 @@ def memory_start_session(name: str) -> dict[str, Any]:
         content=name.strip(),
         data={"started_at": _now_iso(), "agent_id": "default"},
     )
-    return {"session_id": _session_id, "created": True}
+    return {"session_id": _session_id, "created": True, "namespace": store.namespace}
 
 
 # ── Tool 1: memory_store ────────────────────────────────────────────────────────
@@ -113,6 +122,7 @@ def memory_store(
     session_id: str | None = None,
     rationale: str | None = None,
     alternatives_rejected: list[str] | None = None,
+    namespace: str | None = None,
 ) -> dict[str, Any]:
     """
     Persist a memory node (fact, decision, outcome, procedure, preference, or action).
@@ -123,6 +133,7 @@ def memory_store(
 
     Use `rationale` to record *why* the decision was made (shows in memory_why).
     Use `alternatives_rejected` to record options that were considered but dropped.
+    Use `namespace` to switch the active namespace and write into it (resets session).
 
     Example: memory_store("Chose JWT for auth — stateless scaling",
                           kind="decision", entities=["auth_service"],
@@ -131,7 +142,13 @@ def memory_store(
 
     Returns: {node_id, linked_entity_ids, created_entity_ids}
     """
+    global _session_id
     store = _get_store()
+    if namespace is not None:
+        ns = namespace.strip() or "default"
+        if ns != store.namespace:
+            store.namespace = ns
+            _session_id = None
     sid = session_id or _get_or_create_session()
 
     valid_kinds = {"session", "fact", "decision", "action", "outcome",
@@ -196,6 +213,7 @@ def memory_recall(
     as_of: str | None = None,
     hops: int = 1,
     min_confidence: float = 0.0,
+    namespace: str | None = None,
 ) -> str:
     """
     Retrieve the most relevant memories for a query, packed into a token budget.
@@ -205,9 +223,18 @@ def memory_recall(
     guaranteed to stay within `budget_tokens`.
 
     Use `min_confidence` (0.0–1.0) to filter out low-confidence nodes.
+    Use `namespace` to read from a specific namespace without switching the active one.
     Example: memory_recall("why JWT for auth", budget_tokens=500, min_confidence=0.7)
     """
     store = _get_store()
+    if namespace is not None:
+        prev_ns = store.namespace
+        store.namespace = namespace.strip() or "default"
+        try:
+            return recall(store, query, budget_tokens=budget_tokens,
+                          kinds=kinds, as_of=as_of, hops=hops, min_confidence=min_confidence)
+        finally:
+            store.namespace = prev_ns
     return recall(store, query, budget_tokens=budget_tokens,
                   kinds=kinds, as_of=as_of, hops=hops, min_confidence=min_confidence)
 
@@ -471,20 +498,52 @@ def memory_clear_session(
 # ── Tool 11: memory_stats ─────────────────────────────────────────────────────
 
 @mcp.tool()
-def memory_stats() -> dict[str, Any]:
+def memory_stats(namespace: str | None = None) -> dict[str, Any]:
     """
     Summary statistics for the memory store.
 
     Returns node counts by kind, database size, top-10 entities by degree,
     and list of namespaces.
+    Use `namespace` to get stats for a specific namespace without switching the active one.
 
     Example: memory_stats()
     """
     store = _get_store()
+    if namespace is not None:
+        prev_ns = store.namespace
+        store.namespace = namespace.strip() or "default"
+        try:
+            return store.stats()
+        finally:
+            store.namespace = prev_ns
     return store.stats()
 
 
-# ── Tool 12: memory_for_code ──────────────────────────────────────────────────
+# ── Tool 12: memory_switch_namespace ──────────────────────────────────────────
+
+@mcp.tool()
+def memory_switch_namespace(namespace: str) -> dict[str, Any]:
+    """
+    Switch the active namespace for this server process.
+
+    All subsequent memory_store, memory_recall, memory_start_session, and
+    memory_stats calls will operate in `namespace`. Resets the active session
+    so the next memory_store opens a fresh session in the new namespace.
+
+    Use namespaces to isolate memory for separate projects or agents in the
+    same database file. The "default" namespace is used when none is set.
+
+    Example: memory_switch_namespace("project_b")
+    """
+    global _session_id
+    store = _get_store()
+    prev = store.namespace
+    store.namespace = namespace.strip() or "default"
+    _session_id = None
+    return {"previous_namespace": prev, "active_namespace": store.namespace}
+
+
+# ── Tool 13: memory_for_code ──────────────────────────────────────────────────
 
 @mcp.tool()
 def memory_for_code(
@@ -513,7 +572,7 @@ def memory_for_code(
     return "\n".join(lines)
 
 
-# ── Tool 13: memory_to_code ───────────────────────────────────────────────────
+# ── Tool 14: memory_to_code ───────────────────────────────────────────────────
 
 @mcp.tool()
 def memory_to_code(memory_id: str) -> list[dict[str, Any]]:
@@ -529,7 +588,7 @@ def memory_to_code(memory_id: str) -> list[dict[str, Any]]:
     return store.get_touches_from_node(memory_id)
 
 
-# ── Tool 14: memory_import ────────────────────────────────────────────────────
+# ── Tool 15: memory_import ────────────────────────────────────────────────────
 
 @mcp.tool()
 def memory_import(nodes: list[dict[str, Any]]) -> dict[str, Any]:
@@ -596,6 +655,107 @@ def memory_import(nodes: list[dict[str, Any]]) -> dict[str, Any]:
         "node_ids": node_ids,
         "created_entity_ids": all_created,
         "errors": errors,
+    }
+
+
+# ── Tool 16: memory_verify_staleness ─────────────────────────────────────────
+
+@mcp.tool()
+def memory_verify_staleness(queue: bool = True) -> dict[str, Any]:
+    """
+    Scan all TOUCHES edges and flag memories whose source file has changed.
+
+    For each TOUCHES edge, compares the file's mtime against the memory node's
+    recorded_at. Nodes where the file was modified after the memory was stored
+    are "stale" — the memory may no longer accurately describe the code.
+
+    By default (queue=True), stale nodes are written to mem_review_queue
+    (kind="staleness") for human review. They are NOT tombstoned automatically.
+
+    Returns:
+      {
+        "checked": N,           # total TOUCHES edges inspected
+        "stale": M,             # edges where file was modified after memory stored
+        "missing": K,           # edges where file no longer exists
+        "clean": J,             # edges that are current
+        "stale_nodes": [...],   # list of {node_id, file_path, memory_date, file_mtime}
+        "missing_nodes": [...], # list of {node_id, file_path}
+        "queued": bool,         # whether stale/missing were written to review queue
+      }
+
+    Note: file_path in TOUCHES edges is repo-relative. This tool resolves it
+    relative to the .nervapack/ parent directory. It cannot resolve paths when
+    using the home-directory fallback DB (~/.nervapack/memory.db).
+
+    Example: memory_verify_staleness()
+    """
+    store = _get_store()
+    touches = store.get_all_touches()
+
+    # Resolve repo root: parent of .nervapack/ dir, or cwd fallback
+    db_path = store.db_path
+    if db_path.parent.name == ".nervapack":
+        repo_root = db_path.parent.parent
+    else:
+        repo_root = Path(os.getcwd())
+
+    stale: list[dict[str, Any]] = []
+    missing: list[dict[str, Any]] = []
+    clean = 0
+
+    for t in touches:
+        file_path_str = t.get("file_path", "")
+        if not file_path_str:
+            continue
+        abs_path = repo_root / file_path_str
+        recorded_at_str = t.get("recorded_at", "")
+
+        try:
+            mtime = abs_path.stat().st_mtime
+        except FileNotFoundError:
+            missing.append({"node_id": t["node_id"], "file_path": file_path_str})
+            continue
+
+        if not recorded_at_str:
+            clean += 1
+            continue
+
+        try:
+            recorded_at_dt = datetime.fromisoformat(recorded_at_str)
+            if recorded_at_dt.tzinfo is None:
+                recorded_at_dt = recorded_at_dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            clean += 1
+            continue
+
+        mtime_dt = datetime.fromtimestamp(mtime, tz=timezone.utc)
+        if mtime_dt > recorded_at_dt:
+            stale.append({
+                "node_id": t["node_id"],
+                "file_path": file_path_str,
+                "memory_date": recorded_at_str,
+                "file_mtime": mtime_dt.isoformat(),
+            })
+        else:
+            clean += 1
+
+    queued = False
+    if queue and (stale or missing):
+        payload = {
+            "stale_node_ids": [s["node_id"] for s in stale],
+            "missing_node_ids": [m["node_id"] for m in missing],
+        }
+        store.queue_staleness_job(payload)
+        queued = True
+
+    return {
+        "checked": len(touches),
+        "stale": len(stale),
+        "missing": len(missing),
+        "clean": clean,
+        "stale_nodes": stale,
+        "missing_nodes": missing,
+        "queued": queued,
     }
 
 

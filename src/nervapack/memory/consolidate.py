@@ -51,7 +51,7 @@ class RuleBasedConsolidator:
 
         Returns {"jobs": N, "tombstoned": M}.
         """
-        jobs = self._store.get_pending_jobs()
+        jobs = self._store.get_pending_jobs(kind="session_close")
         tombstoned = 0
         for job in jobs:
             import json

@@ -211,14 +211,19 @@ When `memory_store` is called with entity names that match nodes in the code gra
 
 - `memory_for_code(file_path)` — "What decisions were made about this file?"
 - `memory_to_code(memory_id)` — "Where in the code is this decision anchored?"
+- `memory_verify_staleness()` — "Which of my memories about code are outdated?"
 
 The code graph is loaded lazily when the first matching entity is stored. If the graph is not present, TOUCHES edges are silently skipped (memory works without the code graph).
+
+### Namespace Isolation (v0.5.1)
+
+Every node is tagged with a `namespace` (default `"default"`). All queries filter by namespace. Use `memory_switch_namespace("project_b")` or pass `namespace=` to `memory_store`, `memory_recall`, `memory_start_session`, or `memory_stats` to work in a different namespace. Switching resets the active session so cross-namespace OCCURRED_IN leaks can't happen. All namespaces share one SQLite file.
 
 ---
 
 ## See Also
 
 - [Context Extender guide](context-extender.md) — how to use memory as a conversation context extender, seeding workflow, Claude prompt template
-- [Memory MCP Server](../../integrations/memory-mcp.md) — 15 MCP tools exposed to Claude Code / Cursor
+- [Memory MCP Server](../../integrations/memory-mcp.md) — 17 MCP tools exposed to Claude Code / Cursor
 - [memory CLI](../commands/memory.md) — `init`, `stats`, `search`, `show`, `forget`, `export`, `consolidate`, `import`
 - [Architecture](architecture.md) — how memory relates to the code graph

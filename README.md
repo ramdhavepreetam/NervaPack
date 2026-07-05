@@ -812,13 +812,13 @@ memory_recall("auth", as_of=...)  → returns d_aaa only (point-in-time)
 memory_timeline("auth")           → returns both (d_aaa marked [superseded])
 ```
 
-### MCP Tools (15 total)
+### MCP Tools (17 total)
 
 | Tool | Purpose |
 |------|---------|
-| `memory_start_session` | Open a named session (e.g. "JWT refactor") |
-| `memory_store` | Persist a fact, decision, outcome, procedure, preference, or action |
-| `memory_recall` | FTS5 search → graph expansion → scored, budget-capped recall |
+| `memory_start_session` | Open a named session (e.g. "JWT refactor"); optional `namespace` param |
+| `memory_store` | Persist a fact, decision, outcome, procedure, preference, or action; optional `namespace` param |
+| `memory_recall` | FTS5 search → graph expansion → scored, budget-capped recall; optional `namespace` param |
 | `memory_about` | Entity dossier: all current facts/decisions linked to one entity |
 | `memory_why` | Explain a decision: rationale, rejected alternatives, caused outcomes |
 | `memory_timeline` | Chronological trace including superseded versions |
@@ -827,10 +827,12 @@ memory_timeline("auth")           → returns both (d_aaa marked [superseded])
 | `memory_verify` | `confirm` → confidence +0.1; `refute` → close + confidence ×0.5 |
 | `memory_list_sessions` | List all sessions with node counts |
 | `memory_clear_session` | Delete a session and all its nodes |
-| `memory_stats` | Node counts, DB size, top entities by degree |
+| `memory_stats` | Node counts, DB size, top entities by degree; optional `namespace` param |
 | `memory_for_code` | Memories that TOUCH a source file (optionally at a line) |
 | `memory_to_code` | Code locations a memory node TOUCHES (file, line range, type) |
 | `memory_import` | Bulk-seed memory from a JSON array of node specs |
+| `memory_switch_namespace` | Switch active namespace (resets session; all writes go to new NS) |
+| `memory_verify_staleness` | Scan TOUCHES edges; flag memories where source file changed since stored |
 
 ### Recall Pipeline
 

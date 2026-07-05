@@ -1,6 +1,6 @@
 # Memory MCP Server
 
-`nervapack-memory-mcp` is an MCP server that exposes **15 tools** for storing and recalling structured agent memory. Any MCP-compatible client — Claude Code, Cursor, or a custom agent — can use it to persist facts, decisions, and outcomes across sessions.
+`nervapack-memory-mcp` is an MCP server that exposes **17 tools** for storing and recalling structured agent memory. Any MCP-compatible client — Claude Code, Cursor, or a custom agent — can use it to persist facts, decisions, and outcomes across sessions.
 
 !!! tip "Primary use case: conversation context extender"
     Call `memory_recall("project context")` at the start of every new chat. Get a complete project briefing — 30 days of decisions and conventions — in under 200 tokens. No more re-pasting architecture docs. See the [Context Extender guide](../user-guide/concepts/context-extender.md) for the full workflow and seeding instructions.
@@ -64,6 +64,7 @@ Persist a memory node and link it to entities.
 | `session_id` | string | No | Attach to a specific session. Default: auto-created session |
 | `rationale` | string | No | *Why* this decision was made. Surfaced by `memory_why`. |
 | `alternatives_rejected` | list[string] | No | Options that were considered but dropped. Surfaced by `memory_why`. |
+| `namespace` | string | No | Switch active namespace before writing (resets session). Default: active namespace |
 
 **Returns:**
 
@@ -127,6 +128,7 @@ Retrieve the most relevant memories for a query, packed into a token budget.
 | `as_of` | string | No | ISO-8601 timestamp for point-in-time recall |
 | `hops` | int | No | Graph expansion depth. Default `1`, max `2` |
 | `min_confidence` | float | No | Minimum confidence threshold (0.0–1.0). Default `0.0` (all nodes) |
+| `namespace` | string | No | Read from a specific namespace without switching the active one |
 
 **Returns:** Markdown string, always `≤ budget_tokens`.
 
@@ -405,7 +407,11 @@ memory_verify("f_0019f2...", "refute")
 
 Summary statistics for the memory store.
 
-**Parameters:** None.
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `namespace` | string | No | Read stats for a specific namespace without switching the active one |
 
 **Returns:**
 
@@ -438,6 +444,7 @@ Explicitly open a named session and return its ID. Use this instead of letting s
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `name` | string | Yes | Human-readable task name (e.g. "Debugging payment flow") |
+| `namespace` | string | No | Switch active namespace before opening session (resets any existing session) |
 
 **Returns:**
 
@@ -599,6 +606,96 @@ Also accepts the full export format `{"nodes": [...], "edges": [...]}` from `ner
 
 ---
 
+### `memory_switch_namespace`
+
+Switch the active namespace for this server process. All subsequent writes and reads will operate in the new namespace until switched again.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `namespace` | string | Yes | Namespace to activate. Use `"default"` to return to the default namespace. |
+
+**Returns:**
+
+```json
+{
+  "previous_namespace": "default",
+  "active_namespace": "project_b"
+}
+```
+
+**What it does:**
+
+1. Sets the active namespace on the store.
+2. Resets the in-process session so the next write opens a fresh session in the new namespace.
+
+**Examples:**
+
+```python
+# Isolate a second project's memory in one DB
+memory_switch_namespace("project_b")
+memory_recall("project context")      # reads from project_b only
+
+# Return to default
+memory_switch_namespace("default")
+```
+
+!!! tip "When to use namespaces"
+    Use namespaces when one agent (or one DB) serves multiple projects. Each namespace is fully isolated — `memory_recall` in namespace A never sees nodes from namespace B. All namespaces share the same SQLite file; `memory_stats()` always reports all namespaces.
+
+---
+
+### `memory_verify_staleness`
+
+Scan all TOUCHES edges and flag memories whose source file has been modified since the memory was stored.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `queue` | bool | No | Write stale/missing nodes to `mem_review_queue` for review. Default `True` |
+
+**Returns:**
+
+```json
+{
+  "checked": 12,
+  "stale": 3,
+  "missing": 1,
+  "clean": 8,
+  "stale_nodes": [
+    {"node_id": "d_0019f2...", "file_path": "src/auth/jwt.py",
+     "memory_date": "2026-06-01T10:00:00+00:00",
+     "file_mtime": "2026-07-01T15:30:00+00:00"}
+  ],
+  "missing_nodes": [
+    {"node_id": "f_0019f3...", "file_path": "src/old_service.py"}
+  ],
+  "queued": true
+}
+```
+
+**Staleness definition:** A TOUCHES edge is stale when `file_path`'s mtime is later than the memory node's `recorded_at`. A deleted file is reported as `missing`.
+
+**What it does NOT do:** Tombstone nodes automatically. Stale nodes are queued for human review — you decide whether to update or supersede them. This preserves the supersede-never-delete guarantee.
+
+**Path resolution:** `file_path` in TOUCHES edges is repo-relative. The tool resolves it relative to the `.nervapack/` parent directory (the repo root). It cannot resolve paths when using the home-directory fallback DB (`~/.nervapack/memory.db`).
+
+**Known limitation:** `git clone`, `git checkout`, or `git pull` resets file mtimes. A fresh clone will flag all touched files as stale even if the code hasn't changed. Treat staleness reports as hints, not certainties.
+
+**Example:**
+
+```python
+# Find stale memories and queue them for review
+memory_verify_staleness()
+
+# Just check without queuing
+memory_verify_staleness(queue=False)
+```
+
+---
+
 ## Recommended Agent Workflow
 
 ```
@@ -637,6 +734,8 @@ Session start
 | `memory_list_sessions` | To audit or review past sessions |
 | `memory_clear_session` | To delete a session and all its nodes |
 | `memory_stats` | Diagnostic/administrative use |
+| `memory_switch_namespace` | When switching between isolated projects in one DB |
+| `memory_verify_staleness` | Periodically — check whether TOUCHES edges are still current |
 
 ---
 
