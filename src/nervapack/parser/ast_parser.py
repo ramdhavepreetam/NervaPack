@@ -107,19 +107,61 @@ _SUPPORTED_EXTENSIONS = set(LANGUAGE_REGISTRY.keys())
 _SKIP_DIRS = {".git", "node_modules", "venv", "__pycache__", ".nervapack"}
 
 
+def _load_ignore_patterns(directory: str) -> List[str]:
+    """Read .nervapackignore and return patterns as a list of strings."""
+    ignore_file = Path(directory) / ".nervapackignore"
+    if not ignore_file.exists():
+        return []
+    patterns = []
+    for line in ignore_file.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            patterns.append(line)
+    return patterns
+
+
+def _is_ignored(path: str, root: str, patterns: List[str]) -> bool:
+    """Return True if path matches any ignore pattern (gitignore-style, simple)."""
+    import fnmatch
+    # Make path relative to root for matching
+    try:
+        rel = Path(path).relative_to(root).as_posix()
+    except ValueError:
+        rel = path
+
+    for pattern in patterns:
+        # Strip trailing slash — used for dirs but match against both
+        pat = pattern.rstrip("/")
+        # Match against filename, relative path, or any path component
+        name = Path(path).name
+        if (fnmatch.fnmatch(name, pat)
+                or fnmatch.fnmatch(rel, pat)
+                or any(fnmatch.fnmatch(part, pat) for part in Path(rel).parts)):
+            return True
+    return False
+
+
 def scan_directory(directory: str) -> List[ParsedEntity]:
     parser = ASTParser()
     all_entities: List[ParsedEntity] = []
+    ignore_patterns = _load_ignore_patterns(directory)
+    abs_root = str(Path(directory).resolve())
+
     for root, dirs, files in os.walk(directory):
-        dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
+        # Skip hardcoded dirs and .nervapackignore dir patterns
+        dirs[:] = [
+            d for d in dirs
+            if d not in _SKIP_DIRS
+            and not _is_ignored(os.path.join(root, d), abs_root, ignore_patterns)
+        ]
         for file in files:
             if Path(file).suffix not in _SUPPORTED_EXTENSIONS:
                 continue
             file_path = os.path.join(root, file)
+            if _is_ignored(file_path, abs_root, ignore_patterns):
+                continue
             try:
                 all_entities.extend(parser.parse_file(file_path))
-            except ImportError as exc:
-                # Optional language package not installed — skip silently
-                # (the user will see this only once if they explicitly try to parse that ext)
+            except ImportError:
                 pass
     return all_entities

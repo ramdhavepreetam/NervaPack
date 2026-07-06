@@ -2,7 +2,8 @@
 lib/
 *.min.js
 
-# Ignore build artifacts
+# Ignore build artifacts and generated docs
+site/
 dist/
 build/
 *.egg-info/
