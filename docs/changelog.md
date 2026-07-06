@@ -7,6 +7,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.5] - 2026-07-05
+
+### Fixed
+- **`.nervapackignore` was never read** — `scan_directory()` only consulted a hardcoded `_SKIP_DIRS` set, so `site/`, `lib/`, `dist/` and their minified JavaScript were all ingested as real code. This inflated node counts from ~630 to 1,791 and produced a misleading health score. `scan_directory()` now reads `.nervapackignore` at walk time using gitignore-style fnmatch patterns.
+- Added `site/` (MkDocs build output) to `.nervapackignore`.
+- Fixed `st.page_link("app.py")` crash in the Streamlit dashboard — this call is only valid in multipage Streamlit apps; removed it from the single-file dashboard.
+
+---
+
+## [0.5.4] - 2026-07-05
+
+### Fixed
+- Dashboard startup error: `st.page_link("app.py", icon="🏠")` raises in single-file Streamlit apps. Removed the decorative sidebar navigation link.
+
+---
+
+## [0.5.3] - 2026-07-05
+
+### Added — Phase 4: Advanced Analytics
+
+- **`nervapack hotspots`** — new CLI command that reads `git log --numstat` to rank files by commit frequency or total churn. Supports `--since`, `--ext`, `--limit`, `--churn` flags. No new dependencies (uses GitPython already bundled).
+- **Graph evolution history** (`src/nervapack/graph/graph_history.py`) — `GraphHistory` appends a JSONL snapshot of graph stats (node/edge counts, health score, doc coverage) after every `ingest` and `sync`. Snapshots accumulate going-forward; no historical backfill.
+- **Dashboard: Hotspots tab** — interactive bar chart + table with time-window dropdown (All time / 1 year / 6 months / 3 months / 1 month) and sort toggle (commit count vs churn).
+- **Dashboard: Graph Evolution tab** — node/edge count over time, health score trend, doc coverage trend, and sync log table.
+- 14 new tests; full suite: 104 passing.
+
+---
+
+## [0.5.2] - 2026-07-05
+
+### Changed
+- Version bump; docs URL pointed to readthedocs.io.
+
+---
+
+## [0.5.1] - 2026-07-05
+
+### Added — Phase 3: Multi-Agent Scaling (nervapack.memory)
+
+- **Namespace isolation** — all memory nodes tagged with a `namespace` column (default `"default"`). `memory_switch_namespace()` MCP tool sets the active namespace and resets the session to prevent cross-namespace leaks. `namespace` parameter added to `memory_store`, `memory_recall`, `memory_stats`, `memory_start_session`.
+- **Staleness detection** — `memory_verify_staleness()` MCP tool: checks TOUCHES edge file mtimes vs `recorded_at`, queues stale nodes for review.
+
+---
+
+## [0.5.0] - 2026-07-05
+
+### Added — Phase 2: Activate Stubs (nervapack.memory)
+
+- **Rule-based consolidation** — `RuleBasedConsolidator` deduplicates memory nodes via Jaccard word-overlap (threshold > 0.9). `nervapack-memory consolidate [--dry-run]` CLI command.
+- **TOUCHES edge creation** — `match_code_entity()` in `resolve.py` links memory nodes to code graph nodes. Lazy graph load with sentinel; TOUCHES edges carry `file_path`, `start_line`, `end_line`.
+- **Reverse lookup MCP tools** — `memory_for_code(file_path, line=None)` and `memory_to_code(memory_id)`.
+- **Import/seed** — `memory_import` MCP tool and `nervapack-memory import <file.json>` CLI command.
+
+---
+
+## [0.4.6] - 2026-07-05
+
+### Added
+- `__version__` exposed at package root (`from nervapack import __version__`).
+- Automatic update notifications: checks PyPI on startup, prints a notice if a newer version is available (cached for 24 h, non-blocking background thread).
+
+---
+
+## [0.4.5] - 2026-07-05
+
+### Added — Phase 1: Gap Closure (nervapack.memory)
+
+- Tests for `list_sessions`, `delete_session`, `memory_list_sessions`, `memory_clear_session` MCP tools.
+- `memory_verify` refute path: refuted facts excluded from future recalls.
+- `memory_about` normalised alias (`AuthService` → `auth_service`).
+- `timeline` `since` parameter.
+- `memory_store` `rationale` and `alternatives_rejected` optional params — merged into node data JSON.
+- `memory_start_session(name)` MCP tool and `nervapack-memory start-session` CLI command.
+- `min_confidence` filter on `memory_recall` (0.0–1.0).
+- CamelCase→snake_case entity alias fix in `resolve.py`.
+- `pack_timeline` budget cap (default 1000 tokens, drops oldest entries).
+- `nervapack-memory show <node_id>` and `nervapack-memory search <query>` CLI commands.
+
+---
+
+## [0.4.3] - 2026-07-04
+
+### Added
+- `nervapack-memory delete-session` CLI command.
+- `nervapack-memory list-sessions` CLI command.
+
+---
+
 ## [0.4.2] - 2026-07-03
 
 ### Added — `nervapack.memory` (Phase 1)

@@ -144,6 +144,7 @@ nav:
       - dependencies: user-guide/commands/dependencies.md
       - serve: user-guide/commands/serve.md
       - history: user-guide/commands/history.md
+      - hotspots: user-guide/commands/hotspots.md
 
   - Memory:
     - Overview: memory/index.md
