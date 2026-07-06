@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nervapack"
-version = "0.5.1"
+version = "0.5.2"
 description = "Privacy-first, offline knowledge graph for developers"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -87,7 +87,7 @@ all = [
 Homepage = "https://github.com/ramdhavepreetam/NervaPack"
 Repository = "https://github.com/ramdhavepreetam/NervaPack"
 "Bug Tracker" = "https://github.com/ramdhavepreetam/NervaPack/issues"
-Documentation = "https://github.com/ramdhavepreetam/NervaPack#readme"
+Documentation = "https://nervapack.readthedocs.io"
 
 [project.scripts]
 nervapack            = "nervapack.cli:app"
