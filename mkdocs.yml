@@ -134,8 +134,6 @@ nav:
       - Knowledge Graphs: user-guide/concepts/knowledge-graphs.md
       - Architecture: user-guide/concepts/architecture.md
       - Token Efficiency: user-guide/concepts/token-efficiency.md
-      - Agent Memory: user-guide/concepts/memory.md
-      - Context Extender: user-guide/concepts/context-extender.md
     - Commands:
       - ingest: user-guide/commands/ingest.md
       - query: user-guide/commands/query.md
@@ -146,11 +144,22 @@ nav:
       - dependencies: user-guide/commands/dependencies.md
       - serve: user-guide/commands/serve.md
       - history: user-guide/commands/history.md
-      - memory: user-guide/commands/memory.md
+
+  - Memory:
+    - Overview: memory/index.md
+    - Concepts & Data Model: memory/concepts.md
+    - Use Cases:
+      - Chatbot Memory: memory/use-cases/chatbot.md
+      - AI Coding Agent: memory/use-cases/coding-agent.md
+      - Multi-Agent Systems: memory/use-cases/multi-agent.md
+      - Decision Log & ADRs: memory/use-cases/adr-store.md
+    - MCP Tools (17): memory/mcp-tools.md
+    - Python API: memory/python-api.md
+    - CLI Reference: memory/cli.md
+    - Roadmap: memory/roadmap.md
 
   - Integrations:
     - MCP Server (Code Graph): integrations/mcp-server.md
-    - Memory MCP Server: integrations/memory-mcp.md
     - Python SDK: integrations/python-sdk.md
 
   - API Reference:

@@ -76,13 +76,13 @@ NervaPack runs 100% on your machine. It uses `tree-sitter` to parse your codebas
 
     [:octicons-arrow-right-24: Visualization guide](user-guide/commands/visualize.md)
 
--   :material-brain: **Conversation Context Extender**
+-   :material-brain: **Persistent Memory Layer**
 
     ---
 
-    Stop re-pasting project context into every new chat. `memory_recall("project context")` delivers a complete briefing — 30 days of decisions and conventions — in under 200 tokens. Bi-temporal model keeps only current truth. Works offline, no embeddings.
+    Give any LLM app persistent memory — chatbots, coding agents, multi-agent pipelines, decision logs. `memory_recall("project context")` loads 30 days of decisions in under 200 tokens. Bi-temporal, namespace-isolated, 100% offline.
 
-    [:octicons-arrow-right-24: How it works](user-guide/concepts/context-extender.md) · [:octicons-arrow-right-24: MCP tools](integrations/memory-mcp.md)
+    [:octicons-arrow-right-24: Memory overview](memory/index.md) · [:octicons-arrow-right-24: Use cases](memory/use-cases/chatbot.md)
 
 </div>
 
@@ -161,13 +161,13 @@ pip install "nervapack[all-languages]" # Everything
 
 ## Use Cases
 
-- **Conversation context** — Start every new chat with full project context in < 200 tokens — no copy-paste
+- **Chatbot memory** — Persistent user preferences and conversation history; per-user namespace isolation; pure Python, no vector DB → [guide](memory/use-cases/chatbot.md)
+- **AI coding agent** — Claude Code / Cursor recalls all project decisions and conventions at session start → [guide](memory/use-cases/coding-agent.md)
+- **Multi-agent pipelines** — Agents share memory via namespaces; writer publishes facts, reader recalls them → [guide](memory/use-cases/multi-agent.md)
+- **Decision log / ADRs** — Import architecture decisions, query why choices were made, detect when code drifts from decisions → [guide](memory/use-cases/adr-store.md)
 - **Code onboarding** — Understand new codebases 10x faster with graph-precise retrieval
-- **Decision log** — Persist architecture choices across sessions; ask *why* any decision was made
-- **LLM context optimization** — 91% smaller prompts via graph traversal vs. naive RAG
-- **Documentation search** — Find relevant docs linked to the exact code functions they describe
+- **LLM context optimisation** — 91% smaller prompts via graph traversal vs. naive RAG
 - **Refactoring analysis** — See full dependency impact before touching a file
-- **Team conventions** — Store code style rules, deploy procedures, and review norms in memory; every agent session starts with them
 
 ---
 
