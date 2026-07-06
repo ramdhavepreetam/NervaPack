@@ -1,5 +1,5 @@
 import typer
-from typing import Optional
+from typing import List, Optional
 from rich.console import Console
 
 from nervapack import __version__
@@ -156,6 +156,16 @@ def ingest(
     except Exception as e:
         console.print(f"[bold red]Error during ingestion:[/bold red] {e}")
 
+    # Record graph snapshot for temporal tracking
+    try:
+        from nervapack.graph.analytics import GraphAnalytics
+        from nervapack.graph.graph_history import GraphHistory
+        _builder = GraphBuilder()
+        _g = _builder.load_graph()
+        GraphHistory().record_from_analytics(GraphAnalytics(_g), trigger="ingest")
+    except Exception:
+        pass
+
     console.print("[bold green]Ingestion complete.[/bold green]")
 
 @app.command()
@@ -268,6 +278,17 @@ def sync(path: str = typer.Argument(".", help="Path to the repository to sync"))
             console.print(f"Updated Markdown for [cyan]{f}[/cyan]")
             
     builder.save_graph()
+
+    # Record graph snapshot for temporal tracking
+    try:
+        from nervapack.graph.analytics import GraphAnalytics
+        from nervapack.graph.graph_history import GraphHistory
+        GraphHistory().record_from_analytics(
+            GraphAnalytics(graph), trigger="sync", files_changed=len(changed_files)
+        )
+    except Exception:
+        pass
+
     console.print("[bold green]Sync complete.[/bold green]")
 
 @app.command()
@@ -1107,6 +1128,76 @@ def history(
     console.print(f"Average token savings: [green]{avg_savings_pct:.1f}%[/green]")
     console.print(f"Total tokens saved: [green]{format_number(total_savings)}[/green]")
     console.print(f"\nUse [cyan]--limit N[/cyan] to show more queries or [cyan]--stats[/cyan] for detailed analytics.[/dim]")
+
+@app.command()
+def hotspots(
+    limit: int = typer.Option(20, "--limit", "-n", help="Number of files to show"),
+    since: str = typer.Option(None, "--since", help="Limit to commits since this date/expression (e.g. '6 months ago', '2024-01-01')"),
+    ext: List[str] = typer.Option(None, "--ext", help="Filter to file extension(s), e.g. --ext .py --ext .ts"),
+    churn: bool = typer.Option(False, "--churn", help="Sort by total lines changed instead of commit count"),
+):
+    """
+    Show code hotspots — files changed most frequently in git history.
+    """
+    from nervapack.graph.hotspots import HotspotAnalyzer
+    from rich.table import Table
+    from rich.panel import Panel
+    from rich import box
+
+    analyzer = HotspotAnalyzer()
+
+    if not analyzer.is_git_repo():
+        console.print("[bold red]Not a git repository.[/bold red]")
+        raise typer.Exit(1)
+
+    extensions = list(ext) if ext else None
+    hotspot_list = analyzer.get_hotspots(limit=limit, since=since, extensions=extensions)
+
+    if not hotspot_list:
+        console.print("[yellow]No git history found (or no files match the filter).[/yellow]")
+        return
+
+    if churn:
+        hotspot_list.sort(key=lambda h: h.churn_score, reverse=True)
+
+    # Header
+    since_label = f" since [cyan]{since}[/cyan]" if since else ""
+    ext_label = f" · extensions: [cyan]{', '.join(extensions)}[/cyan]" if extensions else ""
+    console.print(f"\n[bold cyan]Code Hotspots[/bold cyan]{since_label}{ext_label}\n")
+
+    table = Table(box=box.MINIMAL_DOUBLE_HEAD, show_header=True, header_style="bold cyan")
+    table.add_column("#", style="dim", width=4)
+    table.add_column("File", style="white", min_width=30)
+    table.add_column("Changes", justify="right", style="bold red", width=9)
+    table.add_column("+Lines", justify="right", style="green", width=8)
+    table.add_column("-Lines", justify="right", style="red", width=8)
+    table.add_column("Churn", justify="right", style="yellow", width=8)
+    table.add_column("Heat", style="magenta", width=12)
+
+    max_changes = hotspot_list[0].change_count if hotspot_list else 1
+
+    for i, h in enumerate(hotspot_list, 1):
+        heat_ratio = h.change_count / max_changes
+        heat_bars = int(heat_ratio * 8)
+        heat_str = "█" * heat_bars + "░" * (8 - heat_bars)
+
+        table.add_row(
+            str(i),
+            h.file_path,
+            str(h.change_count),
+            f"+{h.insertions:,}",
+            f"-{h.deletions:,}",
+            f"{h.churn_score:,.0f}",
+            heat_str,
+        )
+
+    console.print(table)
+
+    total_changes = sum(h.change_count for h in hotspot_list)
+    console.print(f"\n[dim]Top {len(hotspot_list)} files · {total_changes:,} total commits touching these files")
+    if not since:
+        console.print("[dim]Tip: use [cyan]--since '6 months ago'[/cyan] to focus on recent activity[/dim]")
+
 
 if __name__ == "__main__":
     app()

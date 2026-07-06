@@ -15,6 +15,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from nervapack.graph.builder import GraphBuilder
 from nervapack.graph.analytics import GraphAnalytics
 from nervapack.graph.query_history import QueryHistory
+from nervapack.graph.graph_history import GraphHistory
+from nervapack.graph.hotspots import HotspotAnalyzer
 
 # Page configuration
 st.set_page_config(
@@ -80,6 +82,18 @@ def load_query_history():
     return QueryHistory()
 
 
+@st.cache_resource
+def load_graph_history():
+    """Load graph evolution history with caching."""
+    return GraphHistory()
+
+
+@st.cache_resource
+def load_hotspot_analyzer():
+    """Load hotspot analyzer with caching."""
+    return HotspotAnalyzer()
+
+
 def main():
     # Sidebar
     with st.sidebar:
@@ -120,14 +134,17 @@ def main():
             st.rerun()
 
         st.markdown("---")
-        st.caption("NervaPack v0.3.0")
+        st.caption("NervaPack v0.5.3")
 
     # Main content
     st.markdown('<div class="main-header">🧠 NervaPack Dashboard</div>', unsafe_allow_html=True)
     st.markdown("**Real-time analytics for your knowledge graph**")
 
     # Create tabs
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Overview", "📈 Analytics", "🔍 Query History", "🌐 Graph Explorer"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        "📊 Overview", "📈 Analytics", "🔍 Query History",
+        "🌐 Graph Explorer", "🔥 Hotspots", "📅 Graph Evolution",
+    ])
 
     with tab1:
         render_overview(graph, analytics, stats)
@@ -140,6 +157,12 @@ def main():
 
     with tab4:
         render_graph_explorer(graph, analytics)
+
+    with tab5:
+        render_hotspots()
+
+    with tab6:
+        render_graph_evolution()
 
 
 def render_overview(graph, analytics, stats):
@@ -471,6 +494,191 @@ def render_graph_explorer(graph, analytics):
         col2.metric("Max Connections", max_degree)
 
     col3.metric("Graph Density", f"{(graph.number_of_edges() / (graph.number_of_nodes() ** 2) * 100):.2f}%")
+
+
+def render_hotspots():
+    """Render code hotspot analysis panel."""
+    import pandas as pd
+    import plotly.express as px
+
+    st.markdown("### 🔥 Code Hotspots")
+    st.markdown("Files changed most frequently in git history — high-churn areas often indicate bugs or rapid iteration.")
+
+    analyzer = load_hotspot_analyzer()
+
+    if not analyzer.is_git_repo():
+        st.warning("Not a git repository — hotspot analysis requires git.")
+        return
+
+    col_filter1, col_filter2 = st.columns([2, 1])
+    with col_filter1:
+        since = st.selectbox(
+            "Time window",
+            ["All time", "1 year", "6 months", "3 months", "1 month"],
+        )
+        since_map = {
+            "All time": None, "1 year": "1 year ago",
+            "6 months": "6 months ago", "3 months": "3 months ago",
+            "1 month": "1 month ago",
+        }
+        since_arg = since_map[since]
+
+    with col_filter2:
+        sort_by = st.selectbox("Sort by", ["Commit count", "Churn (lines changed)"])
+
+    hotspot_list = analyzer.get_hotspots(limit=30, since=since_arg)
+
+    if not hotspot_list:
+        st.info("No git history found for this time window.")
+        return
+
+    if sort_by == "Churn (lines changed)":
+        hotspot_list.sort(key=lambda h: h.churn_score, reverse=True)
+
+    df = pd.DataFrame([
+        {
+            "File": h.file_path,
+            "Changes": h.change_count,
+            "Insertions": h.insertions,
+            "Deletions": h.deletions,
+            "Churn": int(h.churn_score),
+        }
+        for h in hotspot_list[:20]
+    ])
+
+    # Bar chart
+    y_col = "Changes" if sort_by == "Commit count" else "Churn"
+    fig = px.bar(
+        df,
+        x=y_col,
+        y="File",
+        orientation="h",
+        title=f"Top {len(df)} Files by {sort_by}",
+        color=y_col,
+        color_continuous_scale="reds",
+    )
+    fig.update_layout(
+        height=max(400, len(df) * 22),
+        yaxis={"categoryorder": "total ascending"},
+        showlegend=False,
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Raw table
+    st.markdown("#### Hotspot Table")
+    st.dataframe(df, hide_index=True, use_container_width=True)
+
+    st.markdown("---")
+    st.info("💡 Run `nervapack hotspots` in the terminal for the same view with more filter options.")
+
+
+def render_graph_evolution():
+    """Render graph evolution timeline panel."""
+    import pandas as pd
+    import plotly.graph_objects as go
+    import plotly.express as px
+    from datetime import datetime
+
+    st.markdown("### 📅 Graph Evolution")
+    st.markdown("Node and edge counts recorded after each `ingest` or `sync`. The timeline fills in from first use.")
+
+    gh = load_graph_history()
+    snaps = gh.get_recent(limit=200)
+
+    if not snaps:
+        st.info(
+            "No evolution data yet. Snapshots are recorded automatically each time you run "
+            "`nervapack ingest` or `nervapack sync`."
+        )
+        return
+
+    stats = gh.get_statistics()
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Snapshots", stats["total_snapshots"])
+    col2.metric("Node Growth", f"+{stats['node_growth']:,}")
+    col3.metric("Edge Growth", f"+{stats['edge_growth']:,}")
+    col4.metric("Syncs", stats["sync_count"])
+
+    st.markdown("---")
+
+    # Build dataframe
+    data = []
+    for s in snaps:
+        try:
+            dt = datetime.fromisoformat(s.timestamp)
+        except Exception:
+            continue
+        data.append({
+            "Time": dt,
+            "Nodes": s.total_nodes,
+            "Edges": s.total_edges,
+            "Health": s.health_score,
+            "Trigger": s.trigger,
+            "Doc Coverage %": round(s.doc_coverage_pct, 1),
+        })
+
+    if not data:
+        st.warning("Could not parse snapshot timestamps.")
+        return
+
+    df = pd.DataFrame(data)
+
+    # Nodes + Edges over time
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=df["Time"], y=df["Nodes"],
+        name="Nodes", mode="lines+markers",
+        line=dict(color="#4ECDC4", width=2),
+        marker=dict(symbol="circle-open", size=6),
+    ))
+    fig.add_trace(go.Scatter(
+        x=df["Time"], y=df["Edges"],
+        name="Edges", mode="lines+markers",
+        line=dict(color="#FF6B6B", width=2),
+        marker=dict(symbol="circle-open", size=6),
+    ))
+    fig.update_layout(
+        title="Graph Size Over Time",
+        xaxis_title="Date",
+        yaxis_title="Count",
+        height=350,
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        # Health score over time
+        fig2 = px.line(
+            df, x="Time", y="Health",
+            title="Health Score Over Time",
+            markers=True,
+            color_discrete_sequence=["#A8E6CF"],
+        )
+        fig2.update_layout(height=280, yaxis_range=[0, 100])
+        st.plotly_chart(fig2, use_container_width=True)
+
+    with col2:
+        # Doc coverage over time
+        fig3 = px.line(
+            df, x="Time", y="Doc Coverage %",
+            title="Documentation Coverage %",
+            markers=True,
+            color_discrete_sequence=["#FFD93D"],
+        )
+        fig3.update_layout(height=280, yaxis_range=[0, 100])
+        st.plotly_chart(fig3, use_container_width=True)
+
+    # Sync log table
+    st.markdown("#### Sync Log")
+    log_df = df[["Time", "Trigger", "Nodes", "Edges", "Health", "Doc Coverage %"]].copy()
+    log_df["Time"] = log_df["Time"].dt.strftime("%Y-%m-%d %H:%M")
+    st.dataframe(log_df.iloc[::-1], hide_index=True, use_container_width=True)
 
 
 if __name__ == "__main__":
