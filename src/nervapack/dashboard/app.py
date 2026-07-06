@@ -124,17 +124,13 @@ def main():
         st.metric("Health Score", f"{health_score}/100")
 
         st.markdown("---")
-        st.markdown("### 🔗 Navigation")
-        st.page_link("app.py", label="🏠 Home", icon="🏠")
-
-        st.markdown("---")
         st.markdown("### ⚙️ Actions")
         if st.button("🔄 Refresh Data", use_container_width=True):
             st.cache_resource.clear()
             st.rerun()
 
         st.markdown("---")
-        st.caption("NervaPack v0.5.3")
+        st.caption("NervaPack v0.5.4")
 
     # Main content
     st.markdown('<div class="main-header">🧠 NervaPack Dashboard</div>', unsafe_allow_html=True)
