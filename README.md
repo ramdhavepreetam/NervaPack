@@ -50,9 +50,10 @@ NervaPack runs 100% on your machine. It uses `tree-sitter` to parse your codebas
 
 ## Prerequisites
 
-- **Python 3.10+**
+- **Python 3.9+**
 - **Git** — your project must be a git repository (`git init` if not)
-- **LLM Provider** (choose one):
+
+*(Optional for semantic code-doc binding)*: An LLM provider (choose one). Structural graph indexing and basic queries work out-of-the-box with **zero dependencies** and no cloud connection.
   - **Ollama** (local, privacy-first) — install from [ollama.com](https://ollama.com/), then pull a model:
     ```bash
     ollama pull llama3
@@ -202,26 +203,31 @@ nervapack ingest .
 
 ## Quick Start
 
+> **Zero-Friction Install:** NervaPack works out-of-the-box with no LLM required. On a mid-size repository, time-to-first-query from a cold machine is typically **under 3 minutes**.
+
 ```bash
 cd your-project/
 
-# 1. Build the knowledge graph (run once)
+# 1. Build the structural knowledge graph (runs locally on CPU via ONNX)
 nervapack ingest .
 
 # 2. Query for context — see focused results + token savings dashboard
 nervapack query "How does authentication work?"
 
-# 3. Visualize the graph with search and community detection
+# 3. (Optional) Enhance the graph with semantic doc-to-code edges using an LLM
+nervapack enrich .
+
+# 4. Check system health and verify LLM connections
+nervapack doctor
+
+# 5. Visualize the graph with search and community detection
 nervapack visualize --enhanced --communities
 
-# 4. Launch interactive web dashboard
+# 6. Launch interactive web dashboard
 nervapack serve
 
-# 5. After modifying files, sync the graph incrementally
+# 7. After modifying files, sync the graph incrementally
 nervapack sync .
-
-# 6. Check detailed graph health and analytics
-nervapack status --detailed
 ```
 
 ---
@@ -908,3 +914,5 @@ Bug reports and feature requests go to the [issue tracker](https://github.com/ra
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+<!-- mcp-name: io.github.ramdhavepreetam/nervapack -->

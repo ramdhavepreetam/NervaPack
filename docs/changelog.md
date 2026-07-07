@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.8] - 2026-07-07
+
+### Added
+- **MCP Registry submission** — `server.json` added to project root for the official MCP Registry (`io.github.ramdhavepreetam/nervapack`). Lists all 20 tools across both MCP servers.
+- **PyPI ownership proof** — `<!-- mcp-name: io.github.ramdhavepreetam/nervapack -->` added to `README.md` as required by the registry's PyPI verification flow.
+
+---
+
 ## [0.5.7] - 2026-07-07
 
 ### Fixed

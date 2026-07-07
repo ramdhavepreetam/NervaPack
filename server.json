@@ -1,0 +1,117 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.ramdhavepreetam/nervapack",
+  "title": "NervaPack",
+  "description": "Privacy-first, offline knowledge graph for your codebase. AST-precise K-Hop BFS retrieval with 91% average token reduction vs naive RAG. Includes code-anchored agent memory that survives refactors.",
+  "repository": {
+    "url": "https://github.com/ramdhavepreetam/NervaPack",
+    "source": "github"
+  },
+  "version": "0.5.8",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "nervapack",
+      "version": "0.5.8",
+      "transport": {
+        "type": "stdio"
+      },
+      "runtimeHint": "uvx",
+      "installInstructions": "pip install \"nervapack[mcp]\" && nervapack ingest ."
+    }
+  ],
+  "tools": [
+    {
+      "name": "query_codebase",
+      "description": "Vector search → K-Hop BFS → focused Markdown context with token savings summary"
+    },
+    {
+      "name": "graph_status",
+      "description": "Node/edge counts by type, language breakdown, unsynced file warnings"
+    },
+    {
+      "name": "list_entities",
+      "description": "Browse all indexed classes, functions, imports, and markdown docs"
+    },
+    {
+      "name": "memory_store",
+      "description": "Persist a fact, decision, outcome, procedure, or preference with entity links"
+    },
+    {
+      "name": "memory_recall",
+      "description": "FTS5 search → graph expansion → scored, budget-capped recall"
+    },
+    {
+      "name": "memory_about",
+      "description": "Entity dossier: all current facts/decisions linked to one entity"
+    },
+    {
+      "name": "memory_why",
+      "description": "Explain a decision: rationale, rejected alternatives, caused outcomes"
+    },
+    {
+      "name": "memory_timeline",
+      "description": "Chronological trace including superseded versions"
+    },
+    {
+      "name": "memory_end_session",
+      "description": "Close session with an outcome summary and queue consolidation"
+    },
+    {
+      "name": "memory_forget",
+      "description": "Tombstone (soft-delete) or hard-purge memory nodes"
+    },
+    {
+      "name": "memory_verify",
+      "description": "Confirm or refute a memory node, adjusting confidence"
+    },
+    {
+      "name": "memory_start_session",
+      "description": "Open a named session with optional namespace"
+    },
+    {
+      "name": "memory_list_sessions",
+      "description": "List all sessions with node counts, newest first"
+    },
+    {
+      "name": "memory_clear_session",
+      "description": "Tombstone or hard-purge all nodes belonging to a session"
+    },
+    {
+      "name": "memory_stats",
+      "description": "Node counts, DB size, top entities by degree, all namespaces"
+    },
+    {
+      "name": "memory_for_code",
+      "description": "Memories that TOUCH a source file, optionally at a specific line"
+    },
+    {
+      "name": "memory_to_code",
+      "description": "Code locations a memory node TOUCHES (file, line range)"
+    },
+    {
+      "name": "memory_import",
+      "description": "Bulk-seed memory from a JSON array of node specs"
+    },
+    {
+      "name": "memory_switch_namespace",
+      "description": "Switch the active memory namespace, resetting the active session"
+    },
+    {
+      "name": "memory_verify_staleness",
+      "description": "Scan TOUCHES edges and flag memories whose source file changed since stored"
+    }
+  ],
+  "_meta": {
+    "io.modelcontextprotocol.registry/publisher-provided": {
+      "mcp_servers": ["nervapack-mcp", "nervapack-memory-mcp"],
+      "mcp_config_example": {
+        "mcpServers": {
+          "nervapack": {"command": "nervapack-mcp"},
+          "nervapack-memory": {"command": "nervapack-memory-mcp"}
+        }
+      }
+    }
+  }
+}
