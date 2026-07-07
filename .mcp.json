@@ -6,7 +6,7 @@
     },
     "nervapack-memory": {
       "command": "nervapack-memory-mcp",
-      "description": "NervaPack agent memory (v0.5.1, 17 tools) — memory_store, memory_recall, memory_about, memory_why, memory_timeline, memory_end_session, memory_forget, memory_verify, memory_stats, memory_start_session, memory_list_sessions, memory_clear_session, memory_for_code, memory_to_code, memory_import, memory_switch_namespace, memory_verify_staleness"
+      "description": "NervaPack agent memory (v0.5.8, 17 tools) — memory_store, memory_recall, memory_about, memory_why, memory_timeline, memory_end_session, memory_forget, memory_verify, memory_stats, memory_start_session, memory_list_sessions, memory_clear_session, memory_for_code, memory_to_code, memory_import, memory_switch_namespace, memory_verify_staleness"
     }
   }
 }
