@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.7] - 2026-07-07
+
+### Fixed
+- **Memory MCP server broken** — Phase D consolidation had reduced `mcp_server.py` to 3 tools (`remember`/`recall`/`audit`) while the test suite, README, and `.mcp.json` all expected the original 17-tool interface. All MCP integration tests failed with `Unknown tool: memory_store`. Restored the full 17-tool server.
+- **`add_touches_edges` missing from `MemoryStore`** — the store method referenced by the MCP server was never implemented; added it.
+- **Namespace state leaked across MCP sessions** — `memory_switch_namespace` left `_namespace` set globally; subsequent fresh sessions inherited the wrong namespace. Fixed with an `_namespace_explicit` flag so external resets (test fixture, process restart) revert to `"default"`.
+- **`memory_list_sessions` / `memory_to_code` returned wrong type** — FastMCP serializes Python `list` returns as one `TextContent` per item; single-item lists were parsed as a dict by callers. Both tools now return `CallToolResult` with a single JSON-array text payload.
+- Tests: 90/90 passing (was 32 failing).
+
+---
+
+## [0.5.6] - 2026-07-05
+
+### Fixed
+- **EXPLAINS edges were never created** — `ingest` discarded the already-configured LLM provider and re-instantiated `LLMSummarizer` via the deprecated wrapper, which silently fell back to Ollama and failed. Fixed by using the provider object directly.
+- **Default Claude model was deprecated** — factory defaulted to `claude-3-haiku-20240307` (404). Updated to `claude-haiku-4-5-20251001`.
+- **Keyword-only binding added** — running `nervapack ingest .` without `--llm` now uses free, instant keyword-overlap matching instead of making LLM API calls. LLM binding only triggers when `--llm` is explicitly passed. This produces EXPLAINS edges in seconds at zero cost.
+
+### Result
+- Health score: 8/100 → 47/100
+- EXPLAINS edges: 0 → 3,253
+- Doc coverage: 0.0% → 46.2%
+
+---
+
 ## [0.5.5] - 2026-07-05
 
 ### Fixed

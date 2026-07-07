@@ -2,6 +2,84 @@
 
 NervaPack ships two MCP servers. Use both together for the full picture: the knowledge-graph server answers structural questions about your code; the memory server recalls decisions and facts from previous sessions.
 
+Supported editors: **Claude Code**, **Cursor**, **Windsurf** — all use the same `.mcp.json` config file.
+
+---
+
+## Editor Setup
+
+### Claude Code
+
+Claude Code auto-discovers `.mcp.json` in the project root. No additional configuration needed.
+
+```bash
+pip install "nervapack[mcp]"
+nervapack ingest .
+```
+
+Add `.mcp.json` to your project root (config shown below), then reload Claude Code.
+
+### Cursor
+
+Cursor reads `.mcp.json` from the project root identically to Claude Code.
+
+```bash
+pip install "nervapack[mcp]"
+nervapack ingest .
+```
+
+Add `.mcp.json` (see the config below), then open the Cursor MCP panel (Settings → MCP) and click **Reload**.
+
+### Windsurf
+
+Windsurf (Codeium) supports MCP via a global config file at `~/.codeium/windsurf/mcp_config.json`. You can also use a project-local `.mcp.json` — check your Windsurf version's docs for project-level support.
+
+**Global config (works in all Windsurf projects):**
+
+```bash
+mkdir -p ~/.codeium/windsurf
+```
+
+```json
+{
+  "mcpServers": {
+    "nervapack": {
+      "command": "nervapack-mcp",
+      "description": "NervaPack knowledge graph — query_codebase, graph_status, list_entities"
+    },
+    "nervapack-memory": {
+      "command": "nervapack-memory-mcp",
+      "description": "NervaPack agent memory — store, recall, and reason over facts across sessions"
+    }
+  }
+}
+```
+
+Save to `~/.codeium/windsurf/mcp_config.json`, then restart Windsurf. The NervaPack tools appear in the Cascade panel automatically.
+
+> **Tip:** You still need to run `nervapack ingest .` per-project. The MCP server reads from the project's `.nervapack/` directory.
+
+---
+
+## Full mcp.json
+
+Drop this in your project root for all editors:
+
+```json
+{
+  "mcpServers": {
+    "nervapack": {
+      "command": "nervapack-mcp",
+      "description": "NervaPack knowledge graph — query_codebase, graph_status, list_entities"
+    },
+    "nervapack-memory": {
+      "command": "nervapack-memory-mcp",
+      "description": "NervaPack agent memory — store, recall, and reason over facts across sessions"
+    }
+  }
+}
+```
+
 ---
 
 ## Knowledge Graph Server (`nervapack-mcp`)
