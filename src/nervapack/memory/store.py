@@ -216,22 +216,52 @@ class MemoryStore:
         )
         conn.commit()
 
-    def touch_nodes(self, node_ids: list[str]) -> None:
-        """Increment access_count and set last_accessed for returned nodes."""
+    def touch_nodes(self, node_ids: list[str], query: str | None = None, scores: dict[str, float] | None = None) -> None:
+        """Increment access_count, set last_accessed, and record audit log."""
         if not node_ids:
             return
         conn = self._get_conn()
         now = _now_iso()
         placeholders = ",".join("?" * len(node_ids))
-        conn.execute(
-            f"""
-            UPDATE mem_nodes
-            SET access_count = access_count + 1, last_accessed = ?
-            WHERE id IN ({placeholders})
+        
+        try:
+            conn.execute("BEGIN")
+            conn.execute(
+                f"""
+                UPDATE mem_nodes
+                SET access_count = access_count + 1, last_accessed = ?
+                WHERE id IN ({placeholders})
+                """,
+                [now, *node_ids],
+            )
+            
+            if query is not None:
+                audit_records = []
+                for nid in node_ids:
+                    score = scores.get(nid) if scores else None
+                    audit_records.append((nid, now, query, score))
+                conn.executemany(
+                    "INSERT INTO mem_audit (memory_id, accessed_at, query, score) VALUES (?, ?, ?, ?)",
+                    audit_records
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+
+    def get_audit_trail(self, memory_id: str) -> list[dict[str, Any]]:
+        """Return the audit log for a specific memory node."""
+        conn = self._get_conn()
+        rows = conn.execute(
+            """
+            SELECT accessed_at, query, score
+            FROM mem_audit
+            WHERE memory_id = ?
+            ORDER BY accessed_at DESC
             """,
-            [now, *node_ids],
-        )
-        conn.commit()
+            (memory_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
     # ── FTS search ─────────────────────────────────────────────────────────────
 
@@ -454,11 +484,18 @@ class MemoryStore:
         self,
         query: str,
         since: str | None = None,
+        as_of: str | None = None,
     ) -> list[dict[str, Any]]:
         """Return all matching nodes (incl. superseded) chronologically."""
         conn = self._get_conn()
         since_clause = "AND n.recorded_at >= ?" if since else ""
-        since_params = [since] if since else []
+        as_of_clause = "AND (n.valid_from IS NULL OR n.valid_from <= ?) AND (n.valid_until IS NULL OR n.valid_until > ?)" if as_of else ""
+        
+        params = [self.namespace]
+        if since:
+            params.append(since)
+        if as_of:
+            params.extend([as_of, as_of])
 
         rows: list[Any] = []
         for safe_q in _fts_variants(query):
@@ -472,9 +509,10 @@ class MemoryStore:
                       AND n.namespace = ?
                       AND n.tombstoned = 0
                       {since_clause}
+                      {as_of_clause}
                     ORDER BY n.valid_from ASC
                     """,
-                    [safe_q, self.namespace, *since_params],
+                    [safe_q, *params],
                 ).fetchall()
                 if rows:
                     break
@@ -725,6 +763,26 @@ class MemoryStore:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def rebind_file_path(self, old_path: str, new_path: str) -> int:
+        """Update file_path in TOUCHES edges to survive refactoring/renaming."""
+        conn = self._get_conn()
+        try:
+            conn.execute("BEGIN")
+            cursor = conn.execute(
+                """
+                UPDATE mem_edges
+                SET data = json_set(data, '$.file_path', ?)
+                WHERE kind = 'TOUCHES' AND json_extract(data, '$.file_path') = ?
+                """,
+                (new_path, old_path)
+            )
+            changes = cursor.rowcount
+            conn.commit()
+            return changes
+        except Exception:
+            conn.rollback()
+            raise
+
     def get_touches_from_node(self, node_id: str) -> list[dict[str, Any]]:
         """Return code-graph locations that this memory node TOUCHES."""
         conn = self._get_conn()
@@ -766,6 +824,24 @@ class MemoryStore:
                 **edge_data,
             })
         return result
+
+    def add_touches_edges(self, node_id: str, file_paths: list[str]) -> None:
+        """Add TOUCHES edges from a memory node to a dummy entity per file path."""
+        conn = self._get_conn()
+        for fp in file_paths:
+            # Find or create an entity node whose content is the file path
+            row = conn.execute(
+                "SELECT id FROM mem_nodes WHERE kind='entity' AND content=? AND namespace=? LIMIT 1",
+                (fp, self.namespace),
+            ).fetchone()
+            if row:
+                eid = row["id"]
+            else:
+                eid = self.add_node(kind="entity", content=fp, data={"entity_type": "file"})
+            try:
+                self.add_edge(node_id, eid, "TOUCHES", data={"file_path": fp})
+            except Exception:
+                pass  # duplicate edge — ignore
 
     def queue_staleness_job(self, payload: dict[str, Any]) -> str:
         """Write a staleness-check result to mem_review_queue."""
