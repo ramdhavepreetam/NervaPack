@@ -2,6 +2,8 @@
 
 NervaPack ships two MCP servers. Use both together for the full picture: the knowledge-graph server answers structural questions about your code; the memory server recalls decisions and facts from previous sessions.
 
+**MCP Registry:** `io.github.ramdhavepreetam/nervapack` — listed on the [official MCP Registry](https://registry.modelcontextprotocol.io).
+
 Supported editors: **Claude Code**, **Cursor**, **Windsurf** — all use the same `.mcp.json` config file.
 
 ---
@@ -167,6 +169,7 @@ python -m nervapack.memory init
 
 | Tool | Description |
 |------|-------------|
+| `memory_start_session` | Open a named session — call this first every session |
 | `memory_store` | Persist a fact, decision, outcome, procedure, preference, or action |
 | `memory_recall` | FTS5 search → graph expansion → scored, budget-capped recall |
 | `memory_about` | Dossier on one entity: all linked facts/decisions newest first |
@@ -175,7 +178,14 @@ python -m nervapack.memory init
 | `memory_end_session` | Close the session with an outcome summary |
 | `memory_forget` | Tombstone or hard-purge nodes |
 | `memory_verify` | Confirm (confidence +0.1) or refute (close + confidence ×0.5) |
-| `memory_stats` | Node counts, DB size, top entities |
+| `memory_stats` | Node counts, DB size, top entities, all namespaces |
+| `memory_list_sessions` | List all sessions with node counts, newest first |
+| `memory_clear_session` | Tombstone or hard-purge all nodes in a session |
+| `memory_for_code` | Memories that TOUCH a source file or specific line |
+| `memory_to_code` | Code locations a memory node TOUCHES (file, line range) |
+| `memory_import` | Bulk-seed memory from a JSON array of node specs |
+| `memory_switch_namespace` | Switch the active namespace, resetting the active session |
+| `memory_verify_staleness` | Scan TOUCHES edges; flag memories whose source file changed |
 
 Full tool reference: [Memory MCP Server](memory-mcp.md).
 

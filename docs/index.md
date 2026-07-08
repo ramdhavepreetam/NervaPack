@@ -20,7 +20,7 @@ Build token-efficient context for your LLMs without sending code to the cloud.
 - **Token waste** — chunk-based RAG retrieves blobs of text that may only tangentially relate to your query, bloating your context window.
 - **Privacy risk** — sending code to cloud embedding APIs leaks your proprietary logic.
 
-NervaPack runs 100% on your machine. It uses `tree-sitter` to parse your codebase into a deterministic Abstract Syntax Tree graph, then uses a local Ollama model to draw hard semantic edges between your documentation and your code. Queries traverse this graph with a K-Hop BFS, returning a hyper-targeted, token-efficient context window — no cloud required.
+NervaPack runs 100% on your machine. It uses `tree-sitter` to parse your codebase into a deterministic Abstract Syntax Tree graph, then draws hard semantic edges between your documentation and your code using free keyword-overlap matching (or an optional LLM). Queries traverse this graph with a K-Hop BFS, returning a hyper-targeted, token-efficient context window — no cloud required.
 
 ---
 
@@ -92,8 +92,8 @@ NervaPack runs 100% on your machine. It uses `tree-sitter` to parse your codebas
 
 ```bash
 # Install (30 seconds)
-brew install nervapack
-# or: pipx install nervapack
+pip install "nervapack[mcp]"
+# or: pipx install "nervapack[mcp]"
 
 # Build graph (2 minutes)
 cd your-project/
