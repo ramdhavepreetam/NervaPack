@@ -28,7 +28,7 @@ Always call `query_codebase` first — it returns AST-precise, token-efficient c
 
 ## Project essentials
 
-- **Version:** v0.5.8
+- **Version:** v0.6.0
 - **DB:** `.nervapack/memory.db` (SQLite, auto-resolved from cwd)
 - **Graph:** `.nervapack/graph.graphml` (reingest with `nervapack ingest .` when source changes)
 - **Tests:** `python3 -m pytest tests/memory/ -q` — must stay green before any commit

@@ -30,8 +30,34 @@ class OllamaProvider(LLMProvider):
             model: Model name (e.g., "llama3", "mistral", "codellama")
             base_url: Custom Ollama server URL (default: http://localhost:11434)
         """
-        self.model = model
+        self.model = self._resolve_model(model)
         self.base_url = base_url or "http://localhost:11434"
+
+    def _resolve_model(self, requested: str) -> str:
+        """Return requested model if available, else first installed model."""
+        try:
+            raw = ollama.list()
+            # ollama SDK returns ListResponse with .models list of Model objects
+            models_list = getattr(raw, "models", None) or raw.get("models", [])
+            available = []
+            for m in models_list:
+                name = getattr(m, "model", None) or m.get("model", "")
+                if name:
+                    available.append(name)
+
+            if not available:
+                return requested
+            # Exact match
+            if requested in available:
+                return requested
+            # Prefix match (e.g. "llama3" matches "llama3:latest")
+            for m in available:
+                if m.startswith(requested):
+                    return m
+            # Fall back to first available model
+            return available[0]
+        except Exception:
+            return requested
 
     def chat(
         self,

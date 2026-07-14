@@ -115,51 +115,71 @@ class LLMProvider(ABC):
         """
         Identify which AST nodes a documentation chunk explains.
 
-        This is the critical LLM call during ingestion.
-
-        Args:
-            doc_chunk: Markdown documentation text
-            ast_nodes: List of {node_id, summary, ...} dicts
-
-        Returns:
-            List of node_ids that the doc chunk explains
+        Pre-filters candidates with keyword overlap so the LLM prompt
+        stays small enough for local models to handle reliably.
         """
         if not ast_nodes:
             return []
 
-        # Build candidate list
+        # Pre-filter: score each node by keyword overlap with the doc chunk,
+        # keep the top 12. This prevents 500+ node prompts that cause local
+        # models to hallucinate or time out.
+        doc_words = set(self._tokenise(doc_chunk))
+        if doc_words:
+            scored = []
+            for n in ast_nodes:
+                node_text = f"{n['node_id']} {n.get('summary', '')}"
+                node_words = set(self._tokenise(node_text))
+                overlap = len(doc_words & node_words)
+                scored.append((overlap, n))
+            scored.sort(key=lambda x: -x[0])
+            # Only keep nodes with at least 1 word overlap, max 12
+            candidates_nodes = [n for score, n in scored if score > 0][:12]
+        else:
+            candidates_nodes = ast_nodes[:12]
+
+        if not candidates_nodes:
+            return []
+
         candidates = "\n".join([
             f"ID: {n['node_id']} | Summary: {n.get('summary', 'No summary')}"
-            for n in ast_nodes
+            for n in candidates_nodes
         ])
 
         prompt = (
-            f"Given the following documentation chunk:\n\n{doc_chunk}\n\n"
-            f"Which of the following code entities does it explain or implement? "
-            f"Return a comma-separated list of IDs only, or 'None' if none match.\n\n"
+            f"Documentation chunk:\n{doc_chunk[:800]}\n\n"
+            f"Which of these code entities does the documentation explain? "
+            f"Reply with ONLY the matching IDs as a comma-separated list, or 'None'.\n\n"
             f"Candidates:\n{candidates}\n\n"
             f"Matched IDs:"
         )
 
         messages = [{"role": "user", "content": prompt}]
         system = (
-            "You are an AI binding engine. "
-            "Output ONLY a comma-separated list of IDs, or 'None'."
+            "You are a code documentation linker. "
+            "Output ONLY a comma-separated list of IDs from the candidates, or the word None. "
+            "Do not explain. Do not add text."
         )
 
         try:
-            response = self.chat(messages, system_prompt=system).strip()
+            response = self.chat(messages, system_prompt=system, max_tokens=256).strip()
 
-            # Parse response
-            if response.lower() == "none" or not response:
+            if not response or response.lower().startswith("none"):
                 return []
 
-            # Extract IDs
-            ids = [i.strip() for i in response.split(",") if i.strip()]
+            # Extract only IDs that were actually in our candidate list
+            valid_ids = {n["node_id"] for n in candidates_nodes}
+            ids = [i.strip() for i in response.split(",") if i.strip() in valid_ids]
             return ids
 
         except Exception:
             return []
+
+    @staticmethod
+    def _tokenise(text: str) -> List[str]:
+        """Split text into lowercase words ≥4 chars, stripping punctuation."""
+        import re
+        return [w for w in re.findall(r"[a-zA-Z_]{4,}", text.lower())]
 
 
 class LLMProviderError(Exception):

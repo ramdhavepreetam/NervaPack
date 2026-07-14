@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.6.0] - 2026-07-14
+
+### Added
+- **`nervapack enrich` command** — add semantic doc-to-code edges to an existing graph without full re-ingestion. Uses LLM binding with cost confirmation for cloud providers.
+- **`nervapack doctor` command** — system check for Python version, Tree-sitter grammars, embedding backend, Ollama reachability, and MCP config.
+- **`nervapack memory rebind` command** — update `file_path` in TOUCHES edges to survive file renames/refactoring.
+- **`nervapack memory timeline --as-of`** — point-in-time timeline queries; accepts ISO timestamp or git commit hash.
+- **`nervapack memory audit`** — full access audit trail for a memory node (who recalled it, with what query and score).
+- **`nervapack memory search --as-of`** — bi-temporal search: query the memory state as it was at a past commit or timestamp.
+- **MCP `impact` tool** — reverse dependency analysis; finds what depends on a given entity by traversing the graph backwards.
+- **Pluggable embedding backend** — `nervapack ingest --embeddings ollama` or `NERVAPACK_EMBEDDINGS=ollama` to swap ChromaDB's embedding function. Defaults to ONNX.
+- **Heuristic cross-file `REFERENCES` edges** — `GraphBuilder` now adds name-overlap edges between entities across files (confidence=0.7).
+- **Directional BFS in `GraphRetriever`** — `retrieve_context(direction="forward"|"reverse"|"both")` for forward/reverse/bidirectional traversal.
+- **Query router in `nervapack query`** — intent detection for impact queries (`what breaks if I change X`), exact symbol match, and vector search fallback.
+- **`mem_audit` table** — new schema table tracking every recall access with timestamp, query, and score.
+- **Ollama model auto-resolve** — `OllamaProvider` falls back to first installed model if the requested model isn't available.
+- **LLM `bind_docs_to_ast` pre-filter** — keyword-overlap pre-filter keeps candidate list ≤12, preventing local model hallucination on large prompts.
+- **Ingestion timer** — `nervapack ingest` reports total elapsed time on completion.
+
+### Changed
+- **MCP tool renames (breaking):** `query_codebase` → `query`, `list_entities` → `explore`. Update `.mcp.json` accordingly.
+- **Default Claude model** updated to `claude-haiku-4-5-20251001`.
+- **`nervapack query` output** — Rich markup escaped in node names and doc headers to prevent rendering errors; `[seed]` tag escaped correctly.
+- **`ingest` LLM errors** — non-fatal: prints a notice and continues with keyword-only binding instead of exiting.
+- **`dependencies` command** — `--cycles/--no-cycles` and `--layers/--no-layers` flags simplified to `--cycles` / `--layers`.
+- **`recall`** now records an audit trail entry in `mem_audit` for every node returned.
+- **EXPLAINS edges** now carry `source` (`semantic-llm` or `keyword`) and `confidence` (0.9 or 0.5) attributes.
+
+---
+
 ## [0.5.8] - 2026-07-07
 
 ### Added

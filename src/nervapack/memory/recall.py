@@ -123,10 +123,10 @@ def recall(
     # 5. Pack into budget (pack.py handles budget enforcement)
     result = pack(scored_nodes, query, budget_tokens, as_of, counter=tc)
 
-    # Increment access counts for nodes that made it into the output
-    # Parse which node ids appear in the result
+    # Increment access counts and record audit trail
     returned_ids = [nid for nid in sorted_ids if f"[{nid}]" in result]
-    store.touch_nodes(returned_ids)
+    scores_dict = {nid: score_node(nid) for nid in returned_ids}
+    store.touch_nodes(returned_ids, query=query, scores=scores_dict)
 
     return result
 
@@ -135,9 +135,10 @@ def recall_timeline(
     store: MemoryStore,
     topic: str,
     since: str | None = None,
+    as_of: str | None = None,
     counter: TokenCounter | None = None,
 ) -> str:
     """Chronological trace including superseded nodes."""
     tc = counter or get_token_counter()
-    nodes = store.timeline(topic, since=since)
+    nodes = store.timeline(topic, since=since, as_of=as_of)
     return pack_timeline(nodes, topic, counter=tc)

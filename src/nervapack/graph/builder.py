@@ -1,4 +1,6 @@
 import networkx as nx
+import re
+from collections import defaultdict
 from typing import List
 from nervapack.parser.ast_parser import ParsedEntity
 
@@ -31,7 +33,35 @@ class GraphBuilder:
             )
 
             # Edge from File -> Entity
-            self.graph.add_edge(file_node_id, entity_node_id, relation="DEFINES")
+            self.graph.add_edge(file_node_id, entity_node_id, relation="DEFINES", source="ast", confidence=1.0)
+
+        # Heuristic cross-file name resolution
+        # Group entities by their names (filtering out short names to avoid excessive false positives)
+        entity_nodes_by_name = defaultdict(list)
+        for entity in entities:
+            if entity.name and len(entity.name) >= 4:
+                entity_node_id = f"{entity.type}:{entity.file_path}:{entity.name}:{entity.start_line}"
+                entity_nodes_by_name[entity.name].append(entity_node_id)
+                
+        # For each entity, tokenize its content and find overlaps
+        for entity in entities:
+            if not entity.content:
+                continue
+                
+            entity_node_id = f"{entity.type}:{entity.file_path}:{entity.name}:{entity.start_line}"
+            # Extract alphanumeric/underscore word tokens
+            words = set(re.findall(r'[a-zA-Z_]\w*', entity.content))
+            for word in words:
+                if word in entity_nodes_by_name and word != entity.name:
+                    for target_id in entity_nodes_by_name[word]:
+                        if target_id != entity_node_id:
+                            self.graph.add_edge(
+                                entity_node_id, 
+                                target_id, 
+                                relation="REFERENCES", 
+                                source="heuristic", 
+                                confidence=0.7
+                            )
 
         return self.graph
 

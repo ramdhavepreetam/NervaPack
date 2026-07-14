@@ -48,7 +48,7 @@ def _load_vstore():
 # ── Tool 1: query_codebase ────────────────────────────────────────────────────
 
 @mcp.tool()
-def query_codebase(prompt: str, max_hops: int = 1) -> str:
+def query(prompt: str, max_hops: int = 1) -> str:
     """
     Query the NervaPack knowledge graph for relevant code context.
 
@@ -187,7 +187,7 @@ def graph_status() -> str:
 # ── Tool 3: list_entities ─────────────────────────────────────────────────────
 
 @mcp.tool()
-def list_entities(entity_type: str = "", file_path: str = "") -> str:
+def explore(entity_type: str = "", file_path: str = "") -> str:
     """
     List entities (classes, functions, imports) in the knowledge graph.
 
@@ -239,6 +239,60 @@ def list_entities(entity_type: str = "", file_path: str = "") -> str:
     if len(rows) > 200:
         lines.append(f"\n… {len(rows) - 200} more. Narrow with entity_type or file_path.")
 
+    return "\n".join(lines)
+
+
+# ── Tool 4: impact ────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def impact(target: str, max_hops: int = 1) -> str:
+    """
+    Perform impact analysis (reverse dependency search).
+    
+    Finds what depends on a given entity (e.g. who calls a function, who
+    imports a file or class) by traversing the graph backwards.
+    
+    Args:
+        target:   Name of the entity (e.g. "my_function", "UserAuth", "auth.py").
+        max_hops: How many hops backwards to traverse (default 1).
+    """
+    try:
+        graph = _load_graph()
+    except Exception as e:
+        return f"Graph not found: {e}\nRun `nervapack ingest .` first."
+        
+    start_nodes = []
+    target_lower = target.lower()
+    for node_id, data in graph.nodes(data=True):
+        name = (data.get("name") or "").lower()
+        fp = (data.get("file_path") or data.get("path") or "").lower()
+        if target_lower in name or target_lower in fp:
+            start_nodes.append(node_id)
+            
+    if not start_nodes:
+        return f"Could not find any entity matching '{target}'."
+        
+    from nervapack.graph.retrieval import GraphRetriever
+    retriever = GraphRetriever(graph)
+    subgraph = retriever.retrieve_context(start_nodes, max_hops=max_hops, direction="reverse")
+    
+    # We only want to show the inbound edges to the user
+    # A simple markdown output of the dependents
+    lines = [f"## Impact Analysis for '{target}' (hops={max_hops})"]
+    found_any = False
+    
+    for u, v, data in subgraph.edges(data=True):
+        if v in start_nodes or subgraph.nodes[v].get("name", "").lower() == target_lower:
+            rel = data.get("relation", "DEPENDS_ON")
+            caller_name = subgraph.nodes[u].get("name", u)
+            caller_fp = subgraph.nodes[u].get("file_path", "?")
+            callee_name = subgraph.nodes[v].get("name", v)
+            lines.append(f"- **{caller_name}** (`{caller_fp}`) {rel} **{callee_name}**")
+            found_any = True
+            
+    if not found_any:
+        return f"No inbound dependencies found for '{target}'."
+        
     return "\n".join(lines)
 
 

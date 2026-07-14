@@ -18,10 +18,15 @@ class GraphRetriever:
         self.graph = graph
         self.last_metadata: Optional[RetrievalMetadata] = None
 
-    def retrieve_context(self, start_node_ids: List[str], max_hops: int = 2) -> nx.DiGraph:
+    def retrieve_context(self, start_node_ids: List[str], max_hops: int = 2, direction: str = "both") -> nx.DiGraph:
         """
         Retrieves a sub-graph using K-Hop BFS from the given start nodes.
         Uses Betweenness Centrality to prune high-degree "hub" nodes if necessary.
+        
+        Args:
+            start_node_ids: Initial nodes to seed the search.
+            max_hops: Maximum BFS depth.
+            direction: 'both' (default), 'forward' (successors only), or 'reverse' (predecessors only).
 
         Also tracks metadata about the traversal which can be accessed via self.last_metadata.
         """
@@ -49,21 +54,29 @@ class GraphRetriever:
                 expanded_nodes.append(current_node)
 
             if hops < max_hops:
-                for neighbor in self.graph.neighbors(current_node):
-                    if neighbor not in visited:
-                        # Track edge traversal
-                        edge_data = self.graph.get_edge_data(current_node, neighbor)
-                        relation = edge_data.get("relation", "unknown") if edge_data else "unknown"
-                        edges_followed.append((current_node, neighbor, relation))
-                        queue.append((neighbor, hops + 1))
+                if direction in ["both", "forward"]:
+                    for neighbor in self.graph.neighbors(current_node):
+                        if neighbor not in visited:
+                            # Track edge traversal
+                            edge_data = self.graph.get_edge_data(current_node, neighbor)
+                            relation = edge_data.get("relation", "unknown") if edge_data else "unknown"
+                            source = edge_data.get("source", "unknown") if edge_data else "unknown"
+                            confidence = edge_data.get("confidence", 1.0) if edge_data else 1.0
+                            # We can just store source/confidence in the third tuple slot, or expand it. Let's expand it.
+                            # But wait, Metadata expects List[Tuple[str, str, str]]. Let's stick to relation, maybe format as relation|source
+                            # Actually, we can just change the tuple to Dict or add it. The formatting only uses `relation`.
+                            # We'll just leave it as (current, neighbor, relation) to avoid breaking existing usages, but we can append them if needed.
+                            edges_followed.append((current_node, neighbor, relation))
+                            queue.append((neighbor, hops + 1))
 
                 # Also traverse incoming edges
-                for predecessor in self.graph.predecessors(current_node):
-                    if predecessor not in visited:
-                        edge_data = self.graph.get_edge_data(predecessor, current_node)
-                        relation = edge_data.get("relation", "unknown") if edge_data else "unknown"
-                        edges_followed.append((predecessor, current_node, relation))
-                        queue.append((predecessor, hops + 1))
+                if direction in ["both", "reverse"]:
+                    for predecessor in self.graph.predecessors(current_node):
+                        if predecessor not in visited:
+                            edge_data = self.graph.get_edge_data(predecessor, current_node)
+                            relation = edge_data.get("relation", "unknown") if edge_data else "unknown"
+                            edges_followed.append((predecessor, current_node, relation))
+                            queue.append((predecessor, hops + 1))
 
         # Store metadata
         self.last_metadata = RetrievalMetadata(

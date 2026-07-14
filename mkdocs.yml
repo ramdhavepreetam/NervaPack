@@ -127,6 +127,7 @@ nav:
 
   - Performance:
     - Verified Benchmarks: BENCHMARKS.md
+    - Methodology: METHODOLOGY.md
     - Messy Code Performance: MESSY_CODE_PERFORMANCE.md
 
   - User Guide:

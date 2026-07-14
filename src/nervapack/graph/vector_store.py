@@ -2,10 +2,13 @@ import chromadb
 from typing import List, Dict
 
 class VectorStore:
-    def __init__(self, db_path: str = ".nervapack/chroma_db"):
+    def __init__(self, db_path: str = ".nervapack/chroma_db", embedding_function=None):
         self.client = chromadb.PersistentClient(path=db_path)
         # We use a single collection for both AST node summaries and Markdown chunks
-        self.collection = self.client.get_or_create_collection(name="nervapack_nodes")
+        self.collection = self.client.get_or_create_collection(
+            name="nervapack_nodes",
+            embedding_function=embedding_function
+        )
 
     def ingest_chunks(self, chunks: List[Dict[str, str]]):
         """

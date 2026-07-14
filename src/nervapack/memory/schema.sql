@@ -45,6 +45,14 @@ CREATE TABLE IF NOT EXISTS mem_review_queue (
     resolved    INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS mem_audit (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    memory_id   TEXT NOT NULL REFERENCES mem_nodes(id),
+    accessed_at TEXT NOT NULL,
+    query       TEXT NOT NULL,
+    score       REAL
+);
+
 CREATE INDEX IF NOT EXISTS idx_nodes_kind      ON mem_nodes(kind);
 CREATE INDEX IF NOT EXISTS idx_nodes_validity  ON mem_nodes(valid_until, tombstoned);
 CREATE INDEX IF NOT EXISTS idx_nodes_namespace ON mem_nodes(namespace);

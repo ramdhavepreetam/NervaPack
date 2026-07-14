@@ -33,6 +33,7 @@ def ingest(
     llm: str = typer.Option(None, help="LLM provider (ollama, claude, openai, mcp). Auto-detects if not specified."),
     model: str = typer.Option(None, help="Model name (provider-specific)"),
     api_key: str = typer.Option(None, help="API key for cloud providers"),
+    embeddings: str = typer.Option(None, help="Embedding backend (onnx, ollama). Defaults to ONNX."),
 ):
     """
     Ingest a repository, building the AST and Vector graph.
@@ -53,7 +54,10 @@ def ingest(
     from nervapack.graph.builder import GraphBuilder
     from nervapack.llm.factory import get_llm_provider
     from rich.prompt import Confirm
+    import time
+    import os
 
+    start_time = time.time()
     console.print(f"[bold blue]Ingesting repository at {path}...[/bold blue]")
 
     console.print("Scanning directory for code entities...")
@@ -69,7 +73,17 @@ def ingest(
     console.print("Ingesting AST nodes into Vector Store...")
     try:
         from nervapack.graph.vector_store import VectorStore
-        vstore = VectorStore()
+        
+        embed_backend = embeddings or os.getenv("NERVAPACK_EMBEDDINGS", "onnx")
+        embed_fn = None
+        if embed_backend.lower() == "ollama":
+            from chromadb.utils.embedding_functions import OllamaEmbeddingFunction
+            embed_fn = OllamaEmbeddingFunction(
+                url="http://localhost:11434/api/embeddings",
+                model_name="all-minilm"
+            )
+
+        vstore = VectorStore(embedding_function=embed_fn)
 
         # We'll just ingest them with basic code text for now (in production, LLMSummarizer would summarize them first)
         ast_docs = []
@@ -96,6 +110,7 @@ def ingest(
 
             # Get LLM provider
             console.print("\n[bold cyan]Setting up LLM provider...[/bold cyan]")
+            provider = None
             try:
                 provider = get_llm_provider(
                     provider=llm,
@@ -103,18 +118,12 @@ def ingest(
                     api_key=api_key
                 )
                 provider_name = provider.get_provider_name()
-                console.print(f"Using LLM provider: [green]{provider_name}[/green]")
-
+                
                 # Validate configuration
                 if not provider.validate_config():
-                    console.print("[bold red]Provider configuration invalid![/bold red]")
-                    if "ollama" in provider_name:
-                        console.print("Make sure Ollama is running: [cyan]ollama serve[/cyan]")
-                    elif "claude" in provider_name:
-                        console.print("Set your API key: [cyan]export ANTHROPIC_API_KEY=sk-ant-...[/cyan]")
-                    elif "openai" in provider_name:
-                        console.print("Set your API key: [cyan]export OPENAI_API_KEY=sk-...[/cyan]")
-                    raise typer.Exit(1)
+                    raise ValueError(f"Provider {provider_name} configuration invalid")
+                
+                console.print(f"Using LLM provider: [green]{provider_name}[/green]")
 
                 # Show cost estimate for cloud providers
                 estimated_cost = provider.estimate_cost(len(md_chunks))
@@ -128,27 +137,45 @@ def ingest(
                     # Ask for confirmation
                     if not Confirm.ask("Proceed with cloud LLM binding?"):
                         console.print("[yellow]Binding cancelled. Graph created but docs not linked.[/yellow]")
-                        raise typer.Exit(0)
+                        provider = None
 
-            except ValueError as e:
-                console.print(f"[bold red]LLM provider error:[/bold red] {e}")
-                raise typer.Exit(1)
-
-            # Wrap provider in LLMSummarizer for backwards compat
-            from nervapack.llm.summarizer import LLMSummarizer
-            llm_summarizer = LLMSummarizer(provider=llm, model_name=model or "llama3", api_key=api_key)
+            except Exception as e:
+                console.print(f"[bold yellow]Notice: Install/Start Ollama to unlock semantic doc-code binding. Building structural graph only. ({e})[/bold yellow]")
+                provider = None
 
             console.print("Binding documentation to AST (this may take a while)...")
+            import re as _re
+            def _kw_bind(doc_text, nodes, top_k=5):
+                """Keyword-overlap binding — free, instant, no API calls."""
+                doc_words = set(w for w in _re.findall(r"[a-zA-Z_]{4,}", doc_text.lower()))
+                if not doc_words:
+                    return []
+                scored = []
+                for n in nodes:
+                    node_words = set(w for w in _re.findall(r"[a-zA-Z_]{4,}", n["node_id"].lower()))
+                    overlap = len(doc_words & node_words)
+                    if overlap >= 2:
+                        scored.append((overlap, n["node_id"]))
+                scored.sort(key=lambda x: -x[0])
+                return [nid for _, nid in scored[:top_k]]
+
             for i, chunk in enumerate(md_chunks):
                 md_node_id = f"md_{chunk['file_path']}_{i}"
                 if not graph.has_node(md_node_id):
                     graph.add_node(md_node_id, type="markdown", header=chunk['header'], content=chunk['content'], file_path=chunk['file_path'])
 
-                # Try to bind
-                matched_ids = llm_summarizer.bind_docs_to_ast(chunk['content'], ast_docs)
+                if provider:
+                    matched_ids = provider.bind_docs_to_ast(chunk['content'], ast_docs)
+                    source = "semantic-llm"
+                    confidence = 0.9
+                else:
+                    matched_ids = _kw_bind(chunk['content'], ast_docs)
+                    source = "keyword"
+                    confidence = 0.5
+
                 for matched_id in matched_ids:
                     if graph.has_node(matched_id):
-                        graph.add_edge(md_node_id, matched_id, relation="EXPLAINS")
+                        graph.add_edge(md_node_id, matched_id, relation="EXPLAINS", source=source, confidence=confidence)
 
             builder.save_graph()
             console.print("Semantic binding complete.")
@@ -166,7 +193,8 @@ def ingest(
     except Exception:
         pass
 
-    console.print("[bold green]Ingestion complete.[/bold green]")
+    elapsed_time = time.time() - start_time
+    console.print(f"[bold green]Ingestion complete in {elapsed_time:.2f} seconds.[/bold green]")
 
 @app.command()
 def sync(path: str = typer.Argument(".", help="Path to the repository to sync")):
@@ -273,7 +301,7 @@ def sync(path: str = typer.Argument(".", help="Path to the repository to sync"))
                     matched_ids = llm.bind_docs_to_ast(chunk['content'], ast_docs)
                     for matched_id in matched_ids:
                         if graph.has_node(matched_id):
-                            graph.add_edge(md_node_id, matched_id, relation="EXPLAINS")
+                            graph.add_edge(md_node_id, matched_id, relation="EXPLAINS", source="semantic-llm", confidence=0.9)
                             
             console.print(f"Updated Markdown for [cyan]{f}[/cyan]")
             
@@ -320,22 +348,49 @@ def query(prompt: str = typer.Argument(..., help="Query to run against the knowl
         console.print(f"[bold red]Failed to load graph:[/bold red] {e}. Run 'nervapack ingest' first.")
         raise typer.Exit(1)
 
-    try:
-        vstore = VectorStore()
-        results = vstore.search(prompt, n_results=3)
-    except Exception as e:
-        console.print(f"[bold red]Failed to query vector store:[/bold red] {e}")
-        raise typer.Exit(1)
-
+    intent = "semantic"
+    direction = "both"
     start_nodes = []
-    if results and results['ids'] and len(results['ids']) > 0:
-        start_nodes = results['ids'][0]
+
+    # 1. Check for impact intent
+    prompt_lower = prompt.lower()
+    if prompt_lower.startswith("what breaks if i change ") or "impact of" in prompt_lower:
+        intent = "impact"
+        direction = "reverse"
+        # Try to extract exact symbol from impact query (simple heuristic)
+        words = prompt.split()
+        target = words[-1].strip("?")
+        matching_nodes = [n for n, d in graph.nodes(data=True) if d.get('name') == target]
+        if matching_nodes:
+            start_nodes = matching_nodes
+            
+    # 2. Check for exact symbol match
+    if not start_nodes and intent != "impact":
+        matching_nodes = [n for n, d in graph.nodes(data=True) if d.get('name') == prompt]
+        if matching_nodes:
+            intent = "exact"
+            start_nodes = matching_nodes
+            
+    # 3. Fallback to vector search
+    if not start_nodes:
+        try:
+            vstore = VectorStore()
+            results = vstore.search(prompt, n_results=3)
+            if results and results['ids'] and len(results['ids']) > 0:
+                start_nodes = results['ids'][0]
+        except Exception as e:
+            console.print(f"[bold red]Failed to query vector store:[/bold red] {e}")
+            raise typer.Exit(1)
 
     if not start_nodes:
-        console.print("No relevant nodes found in vector search.")
+        console.print("No relevant nodes found in graph or vector search.")
         raise typer.Exit(0)
 
-    console.print(f"[bold cyan]Vector Search:[/bold cyan] Found {len(start_nodes)} seed nodes\n")
+    console.print(f"[bold cyan]Query Router:[/bold cyan] Intent: [yellow]{intent}[/yellow], Direction: [yellow]{direction}[/yellow]")
+    if intent in ["exact", "impact"] and start_nodes == matching_nodes:
+        console.print(f"[bold cyan]Exact Match:[/bold cyan] Found {len(start_nodes)} seed nodes bypassing vector search\n")
+    else:
+        console.print(f"[bold cyan]Vector Search:[/bold cyan] Found {len(start_nodes)} seed nodes\n")
 
     # Display seed nodes in a table
     seed_table = Table(box=box.MINIMAL, show_header=True, header_style="bold cyan")
@@ -343,11 +398,12 @@ def query(prompt: str = typer.Argument(..., help="Query to run against the knowl
     seed_table.add_column("Node Type", style="cyan")
     seed_table.add_column("Name/File", style="white")
 
+    from rich.markup import escape
     for i, node_id in enumerate(start_nodes[:5], 1):  # Show max 5
         node_data = graph.nodes.get(node_id, {})
         node_type = node_data.get("type", "unknown")
         name = node_data.get("name") or Path(node_data.get("file_path", node_id)).name
-        seed_table.add_row(str(i), node_type, name)
+        seed_table.add_row(str(i), node_type, escape(name))
 
     if len(start_nodes) > 5:
         seed_table.add_row("...", "...", f"and {len(start_nodes) - 5} more")
@@ -356,9 +412,9 @@ def query(prompt: str = typer.Argument(..., help="Query to run against the knowl
     console.print()
 
     # Perform graph traversal
-    console.print(f"[bold cyan]Graph Traversal:[/bold cyan] Expanding with max_hops=1\n")
+    console.print(f"[bold cyan]Graph Traversal:[/bold cyan] Expanding with max_hops=1, direction={direction}\n")
     retriever = GraphRetriever(graph)
-    subgraph = retriever.retrieve_context(start_nodes, max_hops=1)
+    subgraph = retriever.retrieve_context(start_nodes, max_hops=1, direction=direction)
 
     # Get traversal metadata
     metadata = retriever.last_metadata
@@ -389,9 +445,10 @@ def query(prompt: str = typer.Argument(..., help="Query to run against the knowl
             file_name = Path(file_path).name
             file_branch = tree.add(f"📄 [cyan]{file_name}[/cyan] ({len(nodes)} entities)")
 
+            from rich.markup import escape
             for node_id, node_data in nodes:
                 node_type = node_data.get("type", "unknown")
-                name = node_data.get("name", "?")
+                name = escape(node_data.get("name", "?"))
                 is_seed = node_id in metadata.seed_nodes
 
                 # Icon and color based on type
@@ -399,7 +456,7 @@ def query(prompt: str = typer.Argument(..., help="Query to run against the knowl
                 color = "yellow" if is_seed else "white"
                 label = f"{icon} {name}"
                 if is_seed:
-                    label += " [yellow][seed][/yellow]"
+                    label += " [yellow]\\[seed\\][/yellow]"
 
                 entity_branch = file_branch.add(f"[{color}]{label}[/{color}]")
 
@@ -408,7 +465,7 @@ def query(prompt: str = typer.Argument(..., help="Query to run against the knowl
                     if target == node_id and relation == "EXPLAINS":
                         source_data = graph.nodes.get(source, {})
                         if source_data.get("type") == "markdown":
-                            header = source_data.get("header", "doc")
+                            header = escape(source_data.get("header", "doc"))
                             entity_branch.add(f"[lavender]← EXPLAINS: {header}[/lavender]")
 
         console.print(tree)
@@ -416,10 +473,31 @@ def query(prompt: str = typer.Argument(..., help="Query to run against the knowl
 
     markdown_context = retriever.format_as_markdown(subgraph)
 
+    try:
+        from nervapack.memory.store import MemoryStore
+        store = MemoryStore()
+        memory_lines = ["\n# Relevant Memories\n"]
+        memories_added = False
+        source_files = retriever.get_source_files(subgraph)
+        for file_path in source_files:
+            touches = store.get_touches_for_file(file_path)
+            if touches:
+                memories_added = True
+                memory_lines.append(f"## Memories touching `{file_path}`")
+                for n in touches:
+                    kind = n.get("kind", "node")
+                    content = n.get("content", "")
+                    conf = n.get("confidence", 1.0)
+                    memory_lines.append(f"- [{kind}] ({conf:.0%}) {content}")
+        
+        if memories_added:
+            markdown_context += "\n" + "\n".join(memory_lines) + "\n"
+    except Exception:
+        pass
     console.print("[bold cyan]" + "─" * 60 + "[/bold cyan]")
     console.print("[bold cyan]Retrieved Context (Markdown)[/bold cyan]")
     console.print("[bold cyan]" + "─" * 60 + "[/bold cyan]\n")
-    console.print(markdown_context)
+    console.print(markdown_context, markup=False)
     console.print("\n[bold cyan]" + "─" * 60 + "[/bold cyan]\n")
 
     # Token efficiency dashboard
@@ -829,8 +907,8 @@ def dependencies(
     file_path: Optional[str] = typer.Argument(None, help="Specific file to analyze (optional)"),
     output: str = typer.Option(".nervapack/dependencies.html", "--output", "-o", help="Output HTML file path"),
     no_browser: bool = typer.Option(False, "--no-browser", help="Don't open browser automatically"),
-    show_cycles: bool = typer.Option(True, "--cycles/--no-cycles", help="Highlight circular dependencies"),
-    layers: bool = typer.Option(True, "--layers/--no-layers", help="Use hierarchical layout"),
+    show_cycles: bool = typer.Option(True, "--cycles", help="Highlight circular dependencies"),
+    layers: bool = typer.Option(True, "--layers", help="Use hierarchical layout"),
 ):
     """
     Analyze and visualize import dependencies in the codebase.
@@ -1197,6 +1275,166 @@ def hotspots(
     console.print(f"\n[dim]Top {len(hotspot_list)} files · {total_changes:,} total commits touching these files")
     if not since:
         console.print("[dim]Tip: use [cyan]--since '6 months ago'[/cyan] to focus on recent activity[/dim]")
+
+@app.command()
+def enrich(
+    path: str = typer.Argument(".", help="Path to the repository to enrich"),
+    llm: str = typer.Option(None, help="LLM provider (ollama, claude, openai, mcp). Auto-detects if not specified."),
+    model: str = typer.Option(None, help="Model name (provider-specific)"),
+    api_key: str = typer.Option(None, help="API key for cloud providers"),
+):
+    """
+    Add semantic doc-to-code edges to an existing NervaPack graph.
+    """
+    from nervapack.graph.builder import GraphBuilder
+    from nervapack.llm.factory import get_llm_provider
+    from rich.prompt import Confirm
+    import os
+
+    console.print(f"[bold blue]Enriching repository at {path}...[/bold blue]")
+
+    builder = GraphBuilder()
+    try:
+        graph = builder.load_graph()
+    except Exception as e:
+        console.print(f"[bold red]Failed to load graph. Did you run 'nervapack ingest' first?[/bold red]")
+        raise typer.Exit(1)
+
+    # Reconstruct AST docs and Markdown chunks from the graph
+    ast_docs = []
+    md_chunks = []
+
+    for node_id, data in graph.nodes(data=True):
+        if data.get("type") == "markdown":
+            md_chunks.append({
+                "node_id": node_id,
+                "header": data.get("header", ""),
+                "content": data.get("content", ""),
+                "file_path": data.get("file_path", "")
+            })
+        elif data.get("type") in ["class", "function", "import"]:
+            ast_docs.append({
+                "node_id": node_id,
+                "summary": f"This is a {data.get('type')} named {data.get('name')} in {data.get('file_path')}. Code:\n{data.get('content')}"
+            })
+
+    if not md_chunks:
+        console.print("[bold green]No markdown documentation found in the graph. Nothing to enrich.[/bold green]")
+        raise typer.Exit(0)
+
+    if not ast_docs:
+        console.print("[bold green]No code entities found in the graph. Nothing to enrich.[/bold green]")
+        raise typer.Exit(0)
+
+    console.print("\n[bold cyan]Setting up LLM provider...[/bold cyan]")
+    provider = None
+    try:
+        provider = get_llm_provider(provider=llm, model=model, api_key=api_key)
+        provider_name = provider.get_provider_name()
+        
+        if not provider.validate_config():
+            raise ValueError(f"Provider {provider_name} configuration invalid")
+        
+        console.print(f"Using LLM provider: [green]{provider_name}[/green]")
+
+        estimated_cost = provider.estimate_cost(len(md_chunks))
+        if estimated_cost is not None and estimated_cost > 0:
+            console.print(f"\n[bold yellow]💰 Cost Estimate[/bold yellow]")
+            console.print(f"Provider: {provider_name}")
+            console.print(f"Markdown chunks to bind: {len(md_chunks)}")
+            console.print(f"Estimated cost: [yellow]${estimated_cost:.2f}[/yellow]")
+            if not Confirm.ask("Proceed with cloud LLM binding?"):
+                console.print("[yellow]Enrichment cancelled.[/yellow]")
+                raise typer.Exit(0)
+
+    except Exception as e:
+        console.print(f"[bold red]LLM provider error:[/bold red] {e}")
+        console.print("[bold yellow]Please ensure your LLM (e.g., Ollama) is running to use 'enrich'.[/bold yellow]")
+        raise typer.Exit(1)
+
+    console.print(f"Adding semantic edges for {len(md_chunks)} markdown chunks...")
+    added_edges = 0
+    for chunk in md_chunks:
+        matched_ids = provider.bind_docs_to_ast(chunk['content'], ast_docs)
+        for matched_id in matched_ids:
+            if graph.has_node(matched_id) and not graph.has_edge(chunk["node_id"], matched_id):
+                graph.add_edge(chunk["node_id"], matched_id, relation="EXPLAINS")
+                added_edges += 1
+
+    builder.save_graph()
+    console.print(f"[bold green]Enrichment complete. Added {added_edges} semantic edges.[/bold green]")
+
+@app.command()
+def doctor():
+    """
+    Check system configuration and NervaPack dependencies.
+    """
+    import sys
+    import importlib
+    import os
+    
+    console.print("[bold blue]NervaPack System Check[/bold blue]\n")
+    
+    issues = []
+    
+    # 1. Check Python version
+    py_version = sys.version_info
+    py_ver_str = f"{py_version.major}.{py_version.minor}.{py_version.micro}"
+    if py_version >= (3, 9):
+        console.print(f"[green]✓ Python version:[/green] {py_ver_str}")
+    else:
+        console.print(f"[red]✗ Python version:[/red] {py_ver_str} (Requires >= 3.9)")
+        issues.append("Upgrade Python to 3.9 or higher.")
+        
+    # 2. Check core Tree-sitter grammars
+    grammars = ["tree_sitter_python", "tree_sitter_javascript", "tree_sitter_typescript"]
+    missing_grammars = []
+    for g in grammars:
+        try:
+            importlib.import_module(g)
+        except ImportError:
+            missing_grammars.append(g)
+            
+    if not missing_grammars:
+        console.print("[green]✓ Tree-sitter grammars:[/green] All core grammars installed")
+    else:
+        pkg_names = [g.replace('_', '-') for g in missing_grammars]
+        console.print(f"[red]✗ Tree-sitter grammars missing:[/red] {', '.join(pkg_names)}")
+        issues.append(f"Run: pip install {' '.join(pkg_names)}")
+        
+    # 3. Check embedding backend / Ollama
+    embed_backend = os.getenv("NERVAPACK_EMBEDDINGS", "onnx").lower()
+    console.print(f"[green]✓ Embedding backend configured as:[/green] {embed_backend}")
+    if embed_backend == "ollama":
+        import requests
+        try:
+            r = requests.get("http://localhost:11434/")
+            if r.status_code == 200:
+                console.print("[green]✓ Ollama instance:[/green] Reachable on localhost:11434")
+            else:
+                console.print("[yellow]⚠ Ollama instance:[/yellow] Returned non-200 status")
+        except Exception:
+            console.print("[yellow]⚠ Ollama instance:[/yellow] Cannot connect to http://localhost:11434/")
+            issues.append("Start your Ollama server by running: ollama serve")
+            
+    # 4. Check MCP config
+    mcp_paths = [
+        os.path.join(os.getcwd(), ".mcp.json"),
+        os.path.expanduser("~/.claude_code/mcp.json")
+    ]
+    mcp_found = any(os.path.exists(p) for p in mcp_paths)
+    if mcp_found:
+        console.print("[green]✓ MCP config:[/green] Found")
+    else:
+        console.print("[yellow]⚠ MCP config:[/yellow] Not found (Optional)")
+        issues.append("If using Claude Code, configure MCP by running: claude mcp add nervapack python -m nervapack mcp")
+        
+    if issues:
+        console.print("\n[bold yellow]Recommended Fixes:[/bold yellow]")
+        for i, issue in enumerate(issues, 1):
+            console.print(f"  {i}. {issue}")
+    else:
+        console.print("\n[bold green]All systems go! NervaPack is ready.[/bold green]")
 
 
 if __name__ == "__main__":

@@ -7,13 +7,13 @@
     "url": "https://github.com/ramdhavepreetam/NervaPack",
     "source": "github"
   },
-  "version": "0.5.8",
+  "version": "0.6.0",
   "packages": [
     {
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "nervapack",
-      "version": "0.5.8",
+      "version": "0.6.0",
       "transport": {
         "type": "stdio"
       },
@@ -23,7 +23,7 @@
   ],
   "tools": [
     {
-      "name": "query_codebase",
+      "name": "query",
       "description": "Vector search → K-Hop BFS → focused Markdown context with token savings summary"
     },
     {
@@ -31,8 +31,12 @@
       "description": "Node/edge counts by type, language breakdown, unsynced file warnings"
     },
     {
-      "name": "list_entities",
+      "name": "explore",
       "description": "Browse all indexed classes, functions, imports, and markdown docs"
+    },
+    {
+      "name": "impact",
+      "description": "Reverse dependency analysis — find what breaks if a given entity changes"
     },
     {
       "name": "memory_store",

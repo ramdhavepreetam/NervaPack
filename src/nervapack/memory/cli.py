@@ -128,6 +128,19 @@ def cmd_delete_session(
         console.print(f"[yellow]Tombstoned {result['count']} node(s).[/yellow]")
 
 
+@app.command("rebind")
+def cmd_rebind(
+    old_path: str = typer.Argument(..., help="Old file path to rebind from"),
+    new_path: str = typer.Argument(..., help="New file path to rebind to"),
+    db: Optional[str] = typer.Option(None, "--db"),
+) -> None:
+    """Update file_path in TOUCHES edges to survive refactoring/renaming."""
+    store = MemoryStore(db_path=db)
+    changes = store.rebind_file_path(old_path, new_path)
+    console.print(f"[green]Rebound {changes} TOUCHES edges from `{old_path}` to `{new_path}`.[/green]")
+
+
+
 @app.command("start-session")
 def cmd_start_session(
     name: str = typer.Argument(..., help="Human-readable session name"),
@@ -164,12 +177,28 @@ def cmd_search(
     query: str = typer.Argument(..., help="Search query (FTS5)"),
     kind: Optional[str] = typer.Option(None, "--kind", "-k", help="Filter by node kind"),
     limit: int = typer.Option(10, "--limit", "-l"),
+    as_of: Optional[str] = typer.Option(None, "--as-of", help="Commit hash or ISO timestamp for point-in-time search"),
     db: Optional[str] = typer.Option(None, "--db"),
 ) -> None:
     """Run a full-text search and print results as a table."""
     store = MemoryStore(db_path=db)
     kinds = [kind] if kind else None
-    results = store.fts_search(query, limit=limit, kinds=kinds)
+    
+    timestamp_as_of = as_of
+    if as_of and not as_of.startswith("20") and len(as_of) >= 7:
+        # Attempt to resolve git commit to ISO timestamp
+        import subprocess
+        try:
+            ts = subprocess.check_output(
+                ["git", "show", "-s", "--format=%cI", as_of],
+                text=True, stderr=subprocess.DEVNULL
+            ).strip()
+            if ts:
+                timestamp_as_of = ts
+        except Exception:
+            pass
+
+    results = store.fts_search(query, limit=limit, kinds=kinds, as_of=timestamp_as_of)
     if not results:
         console.print("[yellow]No results.[/yellow]")
         return
@@ -186,6 +215,77 @@ def cmd_search(
             f"{r.get('confidence', 1.0):.2f}",
             (r.get("valid_from") or r.get("recorded_at") or "")[:10],
             (r.get("content") or "")[:80],
+        )
+    console.print(table)
+
+
+@app.command("timeline")
+def cmd_timeline(
+    topic: str = typer.Argument(..., help="Topic to trace over time"),
+    since: Optional[str] = typer.Option(None, "--since", "-s", help="ISO-8601 timestamp or commit hash"),
+    as_of: Optional[str] = typer.Option(None, "--as-of", help="Point-in-time timestamp or commit hash"),
+    db: Optional[str] = typer.Option(None, "--db"),
+) -> None:
+    """Print a chronological trace of memories related to a topic."""
+    from .recall import recall_timeline
+    store = MemoryStore(db_path=db)
+    
+    def resolve_git_ts(ref: str) -> str:
+        if not ref.startswith("20") and len(ref) >= 7:
+            import subprocess
+            try:
+                return subprocess.check_output(
+                    ["git", "show", "-s", "--format=%cI", ref],
+                    text=True, stderr=subprocess.DEVNULL
+                ).strip()
+            except Exception:
+                pass
+        return ref
+
+    since_ts = resolve_git_ts(since) if since else None
+    as_of_ts = resolve_git_ts(as_of) if as_of else None
+    
+    # recall_timeline currently only takes `since`, not `as_of`, but FTS search handles as_of.
+    # The requirement is bi-temporal semantics via `--as-of`.
+    result = recall_timeline(store, topic, since=since_ts, as_of=as_of_ts)
+    console.print(result, markup=False)
+
+
+
+@app.command("audit")
+def cmd_audit(
+    memory_id: str = typer.Argument(..., help="Memory ID to audit"),
+    db: Optional[str] = typer.Option(None, "--db"),
+) -> None:
+    """Show the complete history and audit trail of a memory node."""
+    store = MemoryStore(db_path=db)
+    node = store.get_node(memory_id)
+    if not node:
+        console.print(f"[red]Memory node {memory_id!r} not found.[/red]")
+        return
+    
+    console.print(f"[bold cyan]Memory Audit:[/bold cyan] {memory_id}")
+    console.print(f"[bold]Recorded:[/bold] {node.get('recorded_at')}")
+    console.print(f"[bold]Access Count:[/bold] {node.get('access_count')}")
+    console.print(f"[bold]Content:[/bold] {node.get('content')}\n")
+    
+    trail = store.get_audit_trail(memory_id)
+    if not trail:
+        console.print("[yellow]No audit trail found for this memory.[/yellow]")
+        return
+        
+    table = Table(title=f"Audit Trail for {memory_id}")
+    table.add_column("Accessed At", style="cyan", width=20)
+    table.add_column("Score", justify="right", style="green")
+    table.add_column("Query", style="white")
+    
+    for r in trail:
+        score_val = r.get("score")
+        score_str = f"{score_val:.2f}" if score_val is not None else "-"
+        table.add_row(
+            (r.get("accessed_at") or "")[:19],
+            score_str,
+            (r.get("query") or "")[:80]
         )
     console.print(table)
 

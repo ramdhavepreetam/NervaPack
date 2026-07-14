@@ -88,6 +88,8 @@ def get_llm_provider(
 
     # Priority 3: Dispatch to appropriate provider
     if provider == "ollama":
+        # "llama3" is passed as preferred but OllamaProvider._resolve_model()
+        # will fall back to the first available model if llama3 isn't installed.
         model = model or os.getenv("OLLAMA_MODEL", "llama3")
         base_url = os.getenv("OLLAMA_BASE_URL")
         return OllamaProvider(model=model, base_url=base_url)
@@ -99,7 +101,7 @@ def get_llm_provider(
                 "Install with: pip install 'nervapack[claude]'"
             )
         api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
-        model = model or os.getenv("CLAUDE_MODEL", "claude-3-haiku-20240307")
+        model = model or os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
 
         if not api_key:
             raise ValueError(
