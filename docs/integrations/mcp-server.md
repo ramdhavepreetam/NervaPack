@@ -47,11 +47,11 @@ mkdir -p ~/.codeium/windsurf
   "mcpServers": {
     "nervapack": {
       "command": "nervapack-mcp",
-      "description": "NervaPack knowledge graph — query_codebase, graph_status, list_entities"
+      "description": "NervaPack knowledge graph (v0.6.0) — query, graph_status, explore, impact"
     },
     "nervapack-memory": {
       "command": "nervapack-memory-mcp",
-      "description": "NervaPack agent memory — store, recall, and reason over facts across sessions"
+      "description": "NervaPack agent memory (v0.6.0) — store, recall, and reason over facts across sessions"
     }
   }
 }
@@ -72,15 +72,23 @@ Drop this in your project root for all editors:
   "mcpServers": {
     "nervapack": {
       "command": "nervapack-mcp",
-      "description": "NervaPack knowledge graph — query_codebase, graph_status, list_entities"
+      "description": "NervaPack knowledge graph (v0.6.0) — query, graph_status, explore, impact"
     },
     "nervapack-memory": {
       "command": "nervapack-memory-mcp",
-      "description": "NervaPack agent memory — store, recall, and reason over facts across sessions"
+      "description": "NervaPack agent memory (v0.6.0) — store, recall, and reason over facts across sessions"
     }
   }
 }
 ```
+
+!!! warning "Breaking change in v0.6.0"
+    Two MCP tools were renamed. Update any hardcoded tool names in prompts or CLAUDE.md files:
+
+    | Old name (≤ v0.5.8) | New name (v0.6.0+) |
+    |---------------------|---------------------|
+    | `query_codebase` | `query` |
+    | `list_entities` | `explore` |
 
 ---
 
@@ -105,7 +113,7 @@ nervapack ingest .
   "mcpServers": {
     "nervapack": {
       "command": "nervapack-mcp",
-      "description": "NervaPack knowledge graph — query_codebase, graph_status, list_entities"
+      "description": "NervaPack knowledge graph (v0.6.0) — query, graph_status, explore, impact"
     }
   }
 }
@@ -119,17 +127,22 @@ nervapack ingest .
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
-| `query_codebase` | `prompt: str`, `max_hops?: int` | Vector search → K-Hop BFS → focused Markdown context with token savings summary |
+| `query` | `prompt: str`, `max_hops?: int` | Vector search → K-Hop BFS → focused Markdown context with token savings summary |
 | `graph_status` | — | Node/edge counts by type, language breakdown, unsynced file warnings |
-| `list_entities` | `entity_type?: str`, `file_path?: str` | Browse all indexed classes, functions, imports, and markdown docs |
+| `explore` | `entity_type?: str`, `file_path?: str` | Browse all indexed classes, functions, imports, and markdown docs |
+| `impact` | `target: str`, `max_hops?: int` | Reverse dependency analysis — find what depends on a given entity |
 
-### Example Interaction
+### Example Interactions
 
 ```
 You:     "How does the sync command decide which files to re-ingest?"
-Claude:  → calls query_codebase("sync command file re-ingest logic")
+Claude:  → calls query("sync command file re-ingest logic")
          → gets 1,180 tokens of focused context (vs 12,840 tokens naive)
          → answers precisely, citing exact line numbers
+
+You:     "What would break if I refactor VectorStore?"
+Claude:  → calls impact("VectorStore")
+         → returns list of callers and dependents with their file paths
 ```
 
 ---
@@ -201,8 +214,8 @@ With both servers registered, Claude Code has:
 ```
 You:     "Why did we choose JWT over session cookies, and is the auth module still structured that way?"
 
-Claude:  → calls memory_recall("JWT auth decision")       ← history
-         → calls query_codebase("auth module structure")  ← current code
+Claude:  → calls memory_recall("JWT auth decision")  ← history
+         → calls query("auth module structure")        ← current code
          → synthesises both into a coherent answer
 ```
 

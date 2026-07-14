@@ -33,6 +33,7 @@ The `ingest` command scans your repository and builds the complete knowledge gra
 | `--llm` | LLM provider (ollama, claude, openai, mcp) | Auto-detect |
 | `--model` | Model name (provider-specific) | Provider default |
 | `--api-key` | API key for cloud providers | From env vars |
+| `--embeddings` | Embedding backend (`onnx`, `ollama`) | `onnx` |
 
 ---
 
