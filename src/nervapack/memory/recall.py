@@ -78,9 +78,11 @@ def recall(
     frontier = list(zip(entries, relevances))
     for _ in range(hops):
         next_frontier = []
+        # Single batched DB query for all frontier nodes instead of N individual queries
+        frontier_ids = [node["id"] for node, _ in frontier]
+        all_neighbors = store.batch_neighbors(frontier_ids)
         for node, rel in frontier:
-            neighbors = store.neighbors(node["id"])
-            # Stamp _degree onto the node so scoring can use connectivity factor
+            neighbors = all_neighbors.get(node["id"], [])
             node["_degree"] = len(neighbors)
             child_rel = rel * 0.6
             for neighbor in neighbors:

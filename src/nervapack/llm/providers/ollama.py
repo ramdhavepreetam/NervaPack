@@ -3,9 +3,25 @@ Ollama provider for local LLM inference.
 
 Privacy-first option - all processing happens locally.
 """
+import time
 import ollama
 from typing import List, Dict, Optional
 from ..base import LLMProvider, LLMProviderError
+
+# Module-level cache: (result, expiry_timestamp)
+_model_list_cache: tuple = (None, 0.0)
+_MODEL_LIST_TTL = 60.0
+
+
+def _cached_ollama_list():
+    """Return ollama.list() result, cached for 60 s to avoid repeated network calls."""
+    global _model_list_cache
+    result, expiry = _model_list_cache
+    if result is not None and time.monotonic() < expiry:
+        return result
+    result = ollama.list()
+    _model_list_cache = (result, time.monotonic() + _MODEL_LIST_TTL)
+    return result
 
 
 class OllamaProvider(LLMProvider):
@@ -36,7 +52,7 @@ class OllamaProvider(LLMProvider):
     def _resolve_model(self, requested: str) -> str:
         """Return requested model if available, else first installed model."""
         try:
-            raw = ollama.list()
+            raw = _cached_ollama_list()
             # ollama SDK returns ListResponse with .models list of Model objects
             models_list = getattr(raw, "models", None) or raw.get("models", [])
             available = []
@@ -93,8 +109,7 @@ class OllamaProvider(LLMProvider):
     def validate_config(self) -> bool:
         """Check if Ollama is running and model is available."""
         try:
-            # Try to list models - will fail if Ollama not running
-            ollama.list()
+            _cached_ollama_list()
             return True
         except Exception:
             return False

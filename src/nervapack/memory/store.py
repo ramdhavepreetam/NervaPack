@@ -406,6 +406,51 @@ class MemoryStore:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    def batch_neighbors(
+        self,
+        node_ids: list[str],
+        edge_kinds: list[str] | None = None,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Return neighbors for multiple nodes in a single query.
+
+        Returns a dict mapping each input node_id to its list of neighbor node dicts.
+        """
+        if not node_ids:
+            return {}
+        conn = self._get_conn()
+        kinds = edge_kinds or ["ABOUT", "CAUSED", "SUPERSEDES", "OCCURRED_IN", "DERIVED_FROM"]
+        kind_ph = ",".join("?" * len(kinds))
+        id_ph = ",".join("?" * len(node_ids))
+        rows = conn.execute(
+            f"""
+            SELECT e.src, e.dst, n.*
+            FROM mem_edges e
+            JOIN mem_nodes n ON (
+                (e.src IN ({id_ph}) AND e.dst = n.id)
+                OR (e.dst IN ({id_ph}) AND e.src = n.id)
+            )
+            WHERE e.kind IN ({kind_ph})
+              AND n.namespace = ?
+            """,
+            [*node_ids, *node_ids, *kinds, self.namespace],
+        ).fetchall()
+
+        # Build result grouped by the anchor node_id
+        result: dict[str, list[dict[str, Any]]] = {nid: [] for nid in node_ids}
+        seen: dict[str, set[str]] = {nid: set() for nid in node_ids}
+        node_id_set = set(node_ids)
+        for row in rows:
+            r = dict(row)
+            src, dst = r.pop("src"), r.pop("dst")
+            neighbor_id = r["id"]
+            if src in node_id_set and neighbor_id not in seen[src]:
+                seen[src].add(neighbor_id)
+                result[src].append(r)
+            if dst in node_id_set and neighbor_id not in seen[dst]:
+                seen[dst].add(neighbor_id)
+                result[dst].append(r)
+        return result
+
     def get_edges(
         self,
         src: str | None = None,

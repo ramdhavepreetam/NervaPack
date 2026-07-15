@@ -49,14 +49,28 @@ class MarkdownChunker:
                 
         return chunks
 
+_MD_SKIP_DIRS = {
+    ".git", "node_modules", "venv", ".venv", "env", "__pycache__",
+    ".nervapack",
+    "dist", "build", "site", "target", "out", "output",
+    ".eggs", ".tox", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+    "htmlcov", "coverage",
+    ".next", ".nuxt", ".svelte-kit", ".turbo",
+    "bin", ".gradle",
+    ".idea", ".vscode",
+}
+
+
 def scan_markdown_directory(directory: str) -> List[Dict[str, str]]:
     import os
     chunker = MarkdownChunker()
     all_chunks = []
-    for root, _, files in os.walk(directory):
-        # Ignore common bad directories
-        if any(ignored in root for ignored in [".git", "node_modules", "venv", "__pycache__"]):
-            continue
+    for root, dirs, files in os.walk(directory):
+        dirs[:] = [
+            d for d in dirs
+            if d not in _MD_SKIP_DIRS
+            and not d.endswith((".egg-info", ".dist-info"))
+        ]
         for file in files:
             if file.endswith(".md"):
                 file_path = os.path.join(root, file)

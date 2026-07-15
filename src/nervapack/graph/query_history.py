@@ -106,33 +106,59 @@ class QueryHistory:
 
     def get_recent_queries(self, limit: int = 10) -> List[QueryRecord]:
         """
-        Get the most recent N queries.
+        Get the most recent N queries using a memory-efficient tail read.
 
-        Args:
-            limit: Maximum number of queries to return
-
-        Returns:
-            List of QueryRecord objects, most recent first
+        For small limits we read from the end of the file using a chunk-based
+        reverse scan so we never load the whole history into memory.
         """
-        records = []
-
         if not self.history_file.exists():
-            return records
+            return []
 
-        # Read all records
-        with open(self.history_file, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    try:
-                        data = json.loads(line)
-                        records.append(QueryRecord(**data))
-                    except (json.JSONDecodeError, TypeError):
-                        # Skip malformed lines
-                        continue
+        # For very large limits fall back to full read; for normal limits tail-read
+        if limit >= 100_000:
+            records = []
+            with open(self.history_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        try:
+                            records.append(QueryRecord(**json.loads(line)))
+                        except (json.JSONDecodeError, TypeError):
+                            continue
+            return list(reversed(records[-limit:]))
 
-        # Return most recent N, reversed (newest first)
-        return list(reversed(records[-limit:]))
+        # Tail-read: seek backwards in 8 KB chunks collecting complete lines
+        chunk_size = 8192
+        lines_found: List[str] = []
+        with open(self.history_file, "rb") as f:
+            f.seek(0, 2)
+            file_size = f.tell()
+            remaining = file_size
+            leftover = b""
+            while remaining > 0 and len(lines_found) < limit:
+                read_size = min(chunk_size, remaining)
+                remaining -= read_size
+                f.seek(remaining)
+                chunk = f.read(read_size) + leftover
+                raw_lines = chunk.split(b"\n")
+                leftover = raw_lines[0]
+                for raw in reversed(raw_lines[1:]):
+                    stripped = raw.strip()
+                    if stripped:
+                        lines_found.append(stripped.decode("utf-8", errors="replace"))
+                    if len(lines_found) >= limit:
+                        break
+            # Handle the very first line of the file
+            if remaining == 0 and leftover.strip() and len(lines_found) < limit:
+                lines_found.append(leftover.strip().decode("utf-8", errors="replace"))
+
+        records = []
+        for line in lines_found:
+            try:
+                records.append(QueryRecord(**json.loads(line)))
+            except (json.JSONDecodeError, TypeError):
+                continue
+        return records
 
     def get_all_queries(self) -> List[QueryRecord]:
         """

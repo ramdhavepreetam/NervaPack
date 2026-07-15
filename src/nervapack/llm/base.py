@@ -7,6 +7,7 @@ Supports multiple LLM backends:
 - Claude API (cloud, direct)
 - OpenAI API (cloud, direct)
 """
+import re
 from abc import ABC, abstractmethod
 from typing import List, Dict, Optional
 
@@ -178,8 +179,7 @@ class LLMProvider(ABC):
     @staticmethod
     def _tokenise(text: str) -> List[str]:
         """Split text into lowercase words ≥4 chars, stripping punctuation."""
-        import re
-        return [w for w in re.findall(r"[a-zA-Z_]{4,}", text.lower())]
+        return re.findall(r"[a-zA-Z_]{4,}", text.lower())
 
 
 class LLMProviderError(Exception):

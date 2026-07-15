@@ -8,15 +8,27 @@ from rich.table import Table
 from rich.text import Text
 from rich import box
 
+# Singleton encoder — avoids re-initialising tiktoken on every count_tokens call
+_tiktoken_enc = None
+
+
+def _get_encoder():
+    global _tiktoken_enc
+    if _tiktoken_enc is None:
+        try:
+            import tiktoken
+            _tiktoken_enc = tiktoken.get_encoding("cl100k_base")
+        except ImportError:
+            pass
+    return _tiktoken_enc
+
 
 def count_tokens(text: str) -> Tuple[int, bool]:
     """Return (token_count, is_exact). is_exact=False when tiktoken isn't available."""
-    try:
-        import tiktoken
-        enc = tiktoken.get_encoding("cl100k_base")
+    enc = _get_encoder()
+    if enc is not None:
         return len(enc.encode(text)), True
-    except ImportError:
-        return max(1, len(text) // 4), False
+    return max(1, len(text) // 4), False
 
 
 def naive_rag_text(file_paths: List[str]) -> str:

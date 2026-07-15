@@ -5,6 +5,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Token Reduction](https://img.shields.io/badge/Token_Reduction-91.2%25-brightgreen.svg)](docs/BENCHMARKS.md)
 [![Verified](https://img.shields.io/badge/Performance-Verified-blue.svg)](docs/BENCHMARKS.md)
+[![MCP Registry](https://img.shields.io/badge/MCP_Registry-listed-blue.svg)](https://registry.modelcontextprotocol.io)
+
+<!-- mcp-name: io.github.ramdhavepreetam/nervapack -->
 
 **NervaPack** is a privacy-first, offline knowledge graph for your codebase. It solves two fundamental problems with standard Vector RAG:
 
@@ -15,7 +18,7 @@ NervaPack runs 100% on your machine. It uses `tree-sitter` to parse your codebas
 
 ---
 
-## ⚡ Verified Performance
+## Verified Performance
 
 **91.2% Average Token Reduction** — independently verified on real-world codebases.
 
@@ -26,11 +29,11 @@ NervaPack runs 100% on your machine. It uses `tree-sitter` to parse your codebas
 | Complex Query | 3,290 | 1,102 | **66.5%** |
 | **Average** | **52,037** | **2,459** | **91.2%** |
 
-**Cost Savings:** $181-$724 per developer per year (GPT-4o to GPT-4 Turbo)
+**Cost Savings:** $181–$724 per developer per year (GPT-4o to Claude Sonnet)
 
 📊 **[View Full Benchmarks](docs/BENCHMARKS.md)** · 🧪 **[Messy Code Performance](docs/MESSY_CODE_PERFORMANCE.md)**
 
-> **Code Quality Impact:** 90-99% reduction on clean code, 50-75% on legacy/messy code. Even poorly structured codebases benefit significantly.
+> **Code quality impact:** 90–99% reduction on clean code, 50–75% on legacy/messy code. Even poorly structured codebases benefit significantly.
 
 ---
 
@@ -39,494 +42,408 @@ NervaPack runs 100% on your machine. It uses `tree-sitter` to parse your codebas
 | | Standard Vector RAG | NervaPack |
 |---|---|---|
 | **Parsing** | Arbitrary text chunks | Deterministic AST nodes (class, function, import) |
-| **Retrieval** | Nearest-neighbor blob | K-Hop BFS on a structural graph |
+| **Retrieval** | Nearest-neighbour blob | K-Hop BFS on a structural graph |
 | **Doc ↔ Code links** | None | Hard `EXPLAINS` edges drawn by local LLM |
-| **Privacy** | Cloud embeddings | 100% local (ChromaDB + Ollama) |
+| **Privacy** | Cloud embeddings | 100% local (ChromaDB + ONNX + optional Ollama) |
 | **Incremental sync** | Re-index everything | Surgical per-file update via GitPython diff |
 | **Token savings** | No measurement | Built-in dashboard shows exact reduction per query |
 | **Graph visibility** | Black box | Interactive HTML visualization of every node and edge |
+| **Duplicate-safe** | Repeated ingest = duplicate data | `upsert` — re-ingest is idempotent |
+| **Agent memory** | None | 17-tool MCP server for cross-session memory |
 
 ---
 
 ## Prerequisites
 
-- **Python 3.9+**
+- **Python 3.10+**
 - **Git** — your project must be a git repository (`git init` if not)
 
-*(Optional for semantic code-doc binding)*: An LLM provider (choose one). Structural graph indexing and basic queries work out-of-the-box with **zero dependencies** and no cloud connection.
-  - **Ollama** (local, privacy-first) — install from [ollama.com](https://ollama.com/), then pull a model:
-    ```bash
-    ollama pull llama3
-    ```
-  - **Claude API** (cloud, no local setup) — get API key from [console.anthropic.com](https://console.anthropic.com/)
-  - **OpenAI API** (cloud, widely available) — get API key from [platform.openai.com](https://platform.openai.com/api-keys)
-  - **Claude Code/Cursor** (MCP integration) — uses your existing Claude session, zero config!
+*(Optional for semantic code-doc binding)* — an LLM provider. Structural graph indexing and basic queries work out-of-the-box with zero configuration and no cloud connection.
+
+| Provider | Setup | Cost | Privacy |
+|----------|-------|------|---------|
+| **Ollama** (default) | `brew install ollama && ollama pull llama3` | Free | 100% local |
+| **Claude API** | `pip install "nervapack[claude]"` + `ANTHROPIC_API_KEY` | ~$0.25/1k calls | Cloud |
+| **OpenAI API** | `pip install "nervapack[openai]"` + `OPENAI_API_KEY` | ~$0.15/1k calls | Cloud |
+| **MCP (Claude Code)** | Zero config | Included in subscription | Cloud |
 
 ---
 
 ## Installation
 
-**Option A — Homebrew (Mac/Linux, recommended)**
 ```bash
-brew tap ramdhavepreetam/nervapack
-brew install nervapack
-```
-
-**Option B — pipx (any platform, cleanest Python install)**
-```bash
-pipx install nervapack
-```
-
-**Option C — pip**
-```bash
+# Recommended
 pip install nervapack
+
+# With optional features
+pip install "nervapack[mcp]"          # MCP server for Claude Code / Cursor
+pip install "nervapack[memory]"       # agent memory MCP server
+pip install "nervapack[metrics]"      # exact token counts (tiktoken)
+pip install "nervapack[dashboard]"    # web dashboard (streamlit + plotly)
+pip install "nervapack[claude]"       # Claude API support
+pip install "nervapack[openai]"       # OpenAI API support
+pip install "nervapack[all]"          # everything
 ```
 
-**With optional features:**
-```bash
-pip install "nervapack[metrics]"    # exact token counting (tiktoken)
-pip install "nervapack[dashboard]"  # web dashboard (streamlit + plotly)
-pip install "nervapack[mcp]"        # MCP server for Claude Code/Cursor
-pip install "nervapack[claude]"     # Claude API support (cloud LLM)
-pip install "nervapack[openai]"     # OpenAI API support (cloud LLM)
-pip install "nervapack[cloud-llm]"  # Both Claude + OpenAI
-pip install "nervapack[all]"        # All features
-```
-
-> On first run, `chromadb` downloads `onnxruntime` embedding models to your cache and `tree-sitter` compiles its language bindings. This is a one-time setup (~1–2 min).
-
----
-
-## LLM Provider Options
-
-NervaPack supports multiple LLM providers for document-to-code binding. Choose based on your priorities:
-
-### Option 1: Ollama (Default — Privacy-First, Free)
-
-**Best for:** Privacy-conscious users, offline work, no recurring costs
-
-```bash
-# One-time setup
-brew install ollama
-ollama pull llama3
-ollama serve
-
-# Use NervaPack (auto-detects Ollama)
-nervapack ingest .
-```
-
-**Pros:** ✅ Free, ✅ 100% private, ✅ Works offline
-**Cons:** ❌ ~4GB download, ❌ Uses local resources
-
----
-
-### Option 2: Claude API (Cloud — Fast, High Quality)
-
-**Best for:** Users who want best results without local setup
-
-```bash
-# Install Claude support
-pip install "nervapack[claude]"
-
-# Get API key from https://console.anthropic.com
-export ANTHROPIC_API_KEY=sk-ant-...
-
-# Use NervaPack with Claude
-nervapack ingest . --llm claude
-```
-
-**Cost estimate:** ~$0.25 per 1000 binding calls (Haiku model)
-**Pros:** ✅ No local install, ✅ High quality, ✅ Fast
-**Cons:** ❌ Sends code to cloud, ❌ Costs money
-
-**Available models:**
-- `claude-3-haiku-20240307` (fastest, cheapest — default)
-- `claude-3-5-sonnet-20241022` (best quality, higher cost)
-
----
-
-### Option 3: OpenAI API (Cloud — Widely Available)
-
-**Best for:** Users with existing OpenAI accounts
-
-```bash
-# Install OpenAI support
-pip install "nervapack[openai]"
-
-# Get API key from https://platform.openai.com/api-keys
-export OPENAI_API_KEY=sk-...
-
-# Use NervaPack with OpenAI
-nervapack ingest . --llm openai
-```
-
-**Cost estimate:** ~$0.15 per 1000 binding calls (GPT-4o-mini)
-**Pros:** ✅ Widely available, ✅ Good quality
-**Cons:** ❌ Sends code to cloud, ❌ Costs money
-
-**Available models:**
-- `gpt-4o-mini` (cheapest, good quality — default)
-- `gpt-4o` (best quality, higher cost)
-
----
-
-### Option 4: MCP Delegation (Claude Code/Cursor)
-
-**Best for:** Users already in Claude Code or Cursor
-
-```bash
-# Zero setup needed!
-# If using NervaPack through Claude Code:
-nervapack ingest .
-# → Auto-detects MCP context
-# → Uses your existing Claude session
-# → No separate API key needed
-```
-
-**Pros:** ✅ Zero config, ✅ Uses existing auth, ✅ No extra cost
-**Cons:** ⚠️ Only works in MCP-compatible tools
-
----
-
-### Privacy & Cost Comparison
-
-| Provider | Privacy | Setup | Cost (1000 calls) | Use Case |
-|----------|---------|-------|-------------------|----------|
-| **Ollama** | 🔒 100% Local | Medium | Free | Privacy-first |
-| **Claude API** | ☁️ Cloud | Easy | ~$0.25 | Quality + convenience |
-| **OpenAI API** | ☁️ Cloud | Easy | ~$0.15 | Existing OpenAI users |
-| **MCP Delegation** | ☁️ Cloud* | Zero | Included | Claude Code users |
-
-*Uses Claude through your existing subscription
+> On first run, ChromaDB downloads an ONNX embedding model (~30 MB) to `~/.cache/chroma/`. This is a one-time download.
 
 ---
 
 ## Quick Start
 
-> **Zero-Friction Install:** NervaPack works out-of-the-box with no LLM required. On a mid-size repository, time-to-first-query from a cold machine is typically **under 3 minutes**.
-
 ```bash
 cd your-project/
 
-# 1. Build the structural knowledge graph (runs locally on CPU via ONNX)
+# 1. Build the knowledge graph (runs locally, no LLM required for basic use)
 nervapack ingest .
 
-# 2. Query for context — see focused results + token savings dashboard
+# 2. Query for context — get focused results + token savings dashboard
 nervapack query "How does authentication work?"
 
-# 3. (Optional) Enhance the graph with semantic doc-to-code edges using an LLM
+# 3. Add semantic doc-to-code edges (requires an LLM)
 nervapack enrich .
 
-# 4. Check system health and verify LLM connections
-nervapack doctor
-
-# 5. Visualize the graph with search and community detection
+# 4. Visualize the full graph
 nervapack visualize --enhanced --communities
 
-# 6. Launch interactive web dashboard
-nervapack serve
-
-# 7. After modifying files, sync the graph incrementally
+# 5. After changing files, sync incrementally (fast — only changed files)
 nervapack sync .
+
+# 6. If you ingested wrong data or need a fresh start
+nervapack clean --all
+nervapack ingest .
+
+# 7. Check system health
+nervapack doctor
 ```
 
 ---
 
 ## Command Reference
 
-### `nervapack ingest [PATH]`
+### `nervapack ingest [PATH]` — Build the graph
 
 Scans `PATH` (default: `.`) and builds the full knowledge graph.
 
-What happens:
-1. `tree-sitter` parses source files into Classes, Functions, and Imports — exact AST nodes, not text chunks.
-2. All `.md` files are chunked by header hierarchy.
-3. Each Markdown chunk is sent to your local Ollama model. If the model identifies a code entity the prose explains, a hard `EXPLAINS` edge is written into the graph.
-4. All nodes are embedded and stored in a local ChromaDB instance (`.nervapack/chroma_db`).
+**What happens:**
+1. Walks the directory tree with tree-sitter, skipping `dist/`, `build/`, `node_modules/`, `venv/`, `site/`, `.tox/`, and dozens of other build directories automatically.
+2. Parses source files into exact AST nodes: classes, functions, imports.
+3. Chunks all `.md` files by header hierarchy.
+4. Embeds every entity into a local ChromaDB vector store (ONNX by default, Ollama optional).
+5. Optionally binds doc chunks to code nodes via an LLM, adding `EXPLAINS` edges.
+6. Saves the graph once to `.nervapack/graph.graphml`.
 
-> The initial LLM binding pass is the slowest step. On a large repo with many docs, budget several minutes.
+**Re-ingesting is safe** — `upsert` is used throughout, so running `ingest` twice does not duplicate data.
 
-**Supported languages** (bundled): Python, JavaScript, JSX, TypeScript, TSX
-
-**Additional languages** (optional extras):
 ```bash
-pip install "nervapack[go]"           # Go
-pip install "nervapack[rust]"         # Rust
-pip install "nervapack[java]"         # Java
-pip install "nervapack[c]"            # C / C headers
-pip install "nervapack[cpp]"          # C++
-pip install "nervapack[ruby]"         # Ruby
-pip install "nervapack[csharp]"       # C#
-pip install "nervapack[all-languages]" # everything above
+nervapack ingest .                           # auto-detect LLM
+nervapack ingest . --llm ollama              # force Ollama
+nervapack ingest . --llm claude              # use Claude API
+nervapack ingest . --llm openai --model gpt-4o-mini
+nervapack ingest . --embeddings ollama       # use Ollama for embeddings too
+```
+
+**Supported languages (bundled):** Python, JavaScript, JSX, TypeScript, TSX
+
+**Additional languages:**
+```bash
+pip install "nervapack[go]"            # Go
+pip install "nervapack[rust]"          # Rust
+pip install "nervapack[java]"          # Java
+pip install "nervapack[c]"             # C / C headers
+pip install "nervapack[cpp]"           # C++
+pip install "nervapack[ruby]"          # Ruby
+pip install "nervapack[csharp]"        # C#
+pip install "nervapack[all-languages]" # all of the above
+```
+
+**Exclude directories** — create `.nervapackignore` in your project root (gitignore syntax):
+```
+dist/
+build/
+site/
+generated/
+*.egg-info/
 ```
 
 ---
 
-### `nervapack query PROMPT`
+### `nervapack query PROMPT` — Query the graph
 
-Retrieves context from the graph for a natural-language prompt, then prints a **token savings dashboard** comparing NervaPack against naive RAG.
+Retrieves focused context for a natural-language prompt and prints a token savings dashboard.
 
-What happens:
-1. The prompt is embedded and ChromaDB returns the top-3 most semantically similar nodes.
-2. Those nodes seed a K-Hop Breadth-First Search (`max_hops=1`) through the NetworkX graph.
-3. Adjacent nodes — including any Markdown docs linked via `EXPLAINS` edges — are collected into a compressed Markdown snippet.
-4. The token efficiency panel is printed showing how many tokens were saved vs. sending the raw files.
+**What happens:**
+1. Intent detection — "what breaks if I change X" routes to impact analysis (reverse BFS); exact symbol names bypass vector search.
+2. ChromaDB returns the top-3 most semantically similar nodes.
+3. Those nodes seed a K-Hop BFS through the NetworkX graph (default: 1 hop, both directions).
+4. Adjacent nodes — including any markdown docs via `EXPLAINS` edges and memory notes via `TOUCHES` edges — are collected.
+5. A focused Markdown context block is printed, ready to paste into an LLM prompt.
+6. Token efficiency panel shows savings vs. naive "dump the whole file" RAG.
+
+```bash
+nervapack query "How does authentication work?"
+nervapack query "What calls VectorStore?"
+nervapack query "what breaks if I change GraphBuilder"  # impact analysis
+```
 
 **Example output:**
-
 ```
-Running query: How does the CLI work?
-Found 3 seed nodes. Traversing graph...
+Query: "How does authentication work?"
 
---- Retrieved Context ---
+Query Router: Intent: semantic, Direction: both
+Vector Search: Found 3 seed nodes
+
+Retrieved Context:
+──────────────────────────────────────────────────────────
 # NervaPack Context Retrieval
-## File: src/nervapack/cli.py
-### FUNCTION: query (L200-L242)
+## File: `src/auth/middleware.py`
+### CLASS: AuthMiddleware (L15-L42)
 ...
---- End Context ---
+──────────────────────────────────────────────────────────
 
 ╭──────────────  NervaPack Token Efficiency  ──────────────╮
-│  Strategy              Tokens   Visual            Relative │
-│  Naive RAG (3 files)   12,840   ████████████████  100%    │
-│  NervaPack              1,180   █░░░░░░░░░░░░░░░    9.2%  │
-│ ──────────────────────────────────────────────────────────│
-│  Tokens saved: 11,660   Reduction: 90.8%                  │
-│  Cost saved (GPT-4o  $2.50/1M): $0.0292 per query         │
-│  Cost saved (Claude Sonnet $3/1M): $0.0350 per query      │
+│  Strategy              Tokens   Reduction                 │
+│  Naive RAG (3 files)   12,840   100% (base)              │
+│  NervaPack              1,180     9.2%                    │
+│ ─────────────────────────────────────────────────────────│
+│  Tokens saved: 11,660   Reduction: 90.8%                 │
+│  Cost saved (GPT-4o $2.50/1M): $0.0292 per query         │
 ╰───────────────────────────────────────────────────────────╯
 ```
 
-**"Naive RAG"** is defined as the full content of every source file that contains a matched node — the maximum a standard "find relevant files, dump them whole" approach would send to an LLM. The comparison is honest and conservative.
+---
 
-Install `nervapack[metrics]` for exact token counts via `tiktoken`. Without it, a character-based estimate is used and marked with `~`.
+### `nervapack sync [PATH]` — Incremental update
 
-The context output is designed to be pasted directly into an LLM prompt.
+Updates only the files that changed since the last ingest. Uses `GitPython` to diff the working tree.
 
-> **📊 Verified Performance:** The 90% reduction claim is verified through real-world testing. See [BENCHMARKS.md](docs/BENCHMARKS.md) for detailed test results (91.2% average across 5 queries on NervaPack's own codebase). Performance varies based on code quality: 90-99% on clean code, 50-75% on legacy/messy code. [Learn more →](docs/MESSY_CODE_PERFORMANCE.md)
+```bash
+nervapack sync .
+```
+
+A full ingest on a large project can take minutes. `sync` turns that into a 2–5 second surgical update per file. Re-parses changed files, batch-upserts new vectors, and saves the graph once at the end.
 
 ---
 
-### `nervapack visualize [--enhanced] [--communities]`
+### `nervapack clean [OPTIONS]` — Remove ingested data
 
-Renders the knowledge graph as an **interactive HTML file** and opens it in your browser.
-
-**Basic usage:**
-```bash
-nervapack visualize                          # saves to .nervapack/graph.html
-nervapack visualize --output ~/my-graph.html # custom output path
-nervapack visualize --no-browser             # generate without opening
-```
-
-**Enhanced mode (recommended):**
-```bash
-nervapack visualize --enhanced               # adds real-time search
-nervapack visualize --enhanced --communities # + community detection
-```
-
-**Enhanced features:**
-- **Real-time search** — Filter nodes by typing (instant, client-side)
-- **Path finder** — Click two nodes to find and highlight shortest path
-- **Community detection** — Color-coded modules using Louvain algorithm
-- **Visual highlighting** — Matched nodes enlarged, non-matched dimmed
-
-What the visualization shows:
-- **Node shapes:** diamonds = files, dots = all other entities
-- **Node colors:** blue = file, green = function, amber = class, gray = import, lavender = markdown (or community colors)
-- **Edge styles:** solid = `DEFINES`, dashed = `EXPLAINS`
-- **Hover tooltips:** type, name, file, line range, and a code preview
-- **Interactive:** drag, zoom, click — spring-force physics layout
-
-The graph is a static HTML file with no external dependencies — share it, open it offline, or embed it in docs.
-
----
-
-### `nervapack explore <target> [--hops N]`
-
-Extract and visualize a focused subgraph around a specific file, class, or function. Perfect for understanding a specific part of your codebase without the noise of the full graph.
+Wipe graph data and start fresh. Use this when you have duplicate vectors, ingested the wrong directory, or need to reduce disk usage.
 
 ```bash
-nervapack explore GraphBuilder --hops 2     # explore 2-hop neighborhood
-nervapack explore src/cli.py --hops 1       # file-based exploration
-nervapack explore "function:parse"          # partial name matching
+nervapack clean --vectors          # wipe ChromaDB only (chroma_db/)
+nervapack clean --graph            # delete graph.graphml only
+nervapack clean --history          # clear query + graph history logs
+nervapack clean --all              # everything above (keeps memory.db)
+nervapack clean --all --yes        # skip confirmation (CI / scripts)
 ```
 
-**How it works:**
-1. Searches for nodes matching the target (by file path, name, or node ID)
-2. Performs multi-source BFS to extract N-hop neighborhood
-3. Generates enhanced visualization with search enabled
+**Never deleted by `clean`:** `memory.db` — your agent memory is always safe.
 
-**Use cases:**
-- Understanding class relationships
-- Finding related code quickly
-- Impact analysis before refactoring
-- Onboarding to specific modules
-
----
-
-### `nervapack dependencies [file]`
-
-Analyze file-level import dependencies, detect circular dependencies, and visualize the dependency graph.
-
-**Overall analysis:**
+**Typical workflow after a bad ingest:**
 ```bash
-nervapack dependencies
-```
-
-Shows:
-- Total files and dependency edges
-- Circular dependency detection with cycle visualization
-- Most depended-on files (top 10)
-- Files with most dependencies (top 10)
-- Orphan files (no dependencies)
-- Interactive hierarchical visualization
-
-**Specific file:**
-```bash
-nervapack dependencies src/graph/builder.py
-```
-
-Shows:
-- Files this file imports
-- Files that import this file
-
-**Visualization features:**
-- **Color coding:**
-  - 🔴 Red: Part of circular dependency
-  - 🔵 Cyan: Heavily depended on (>5 dependents)
-  - 🟡 Yellow: Many dependencies (>5 imports)
-  - 🟢 Green: Normal file
-  - ⚫ Gray: Orphan (isolated)
-- **Hierarchical layout** — Topological sort when DAG
-- **Search box** — Filter files by name
-- **Size scaling** — Proportional to total degree
-
-**Example output:**
-```
-╭──────────  Dependency Metrics  ──────────╮
-│ Total Files              │  127          │
-│ Total Dependencies       │  456          │
-│ Max Dependency Depth     │  8            │
-│ Orphan Files             │  3            │
-╰──────────────────────────────────────────╯
-
-⚠ Circular Dependencies Detected: 2 cycle(s)
-
-Cycle 1:
-  auth.py
-  → user.py
-  → session.py
-  → auth.py (back to start)
+nervapack clean --all
+nervapack ingest .
 ```
 
 ---
 
-### `nervapack serve [--port N]`
+### `nervapack enrich [PATH]` — Add semantic edges
 
-Launch an interactive **web dashboard** with real-time analytics, visualizations, and graph exploration. Requires `nervapack[dashboard]`.
+Runs LLM doc-to-code binding on an already-ingested graph. Use this if you:
+- Ran `ingest` without an LLM and want to add `EXPLAINS` edges now.
+- Added new documentation and want to bind it without a full re-ingest.
 
 ```bash
-nervapack serve                  # launches on http://localhost:8501
-nervapack serve --port 8080      # custom port
-nervapack serve --no-browser     # don't auto-open browser
-```
-
-**Dashboard features:**
-- **Overview tab** — Health score, language distribution, top files
-- **Analytics tab** — Node/edge type breakdown, degree distribution
-- **Query History tab** — Trends, cost savings, keyword frequency
-- **Graph Explorer tab** — Real-time search, statistics
-
-**Performance:**
-- Initial load: <2 seconds
-- Subsequent loads: <200ms (cached)
-- Real-time filtering and charts
-
----
-
-### `nervapack sync [PATH]`
-
-Incrementally updates the graph for files changed since the last ingest.
-
-What happens:
-1. `GitPython` diffs your working tree to find modified and deleted files.
-2. For each changed file, old graph nodes and ChromaDB vectors are pruned.
-3. Only the changed files are re-parsed and re-ingested.
-
-A full `ingest` on a large codebase can take minutes. `sync` turns that into a 2–5 second surgical update.
-
----
-
-### `nervapack status [--detailed]`
-
-Prints the current state of the graph: node count, edge count, and any files that are out of sync with the graph.
-
-**Enhanced with `--detailed` flag:**
-```bash
-nervapack status --detailed
-```
-
-Shows comprehensive analytics:
-- **Health score** (0-100) based on documentation coverage, connectivity, and graph density
-- **Language distribution** with visual bars
-- **Most connected files** (top 10 by degree)
-- **Documentation coverage** percentage
-- **Git sync status** with warnings for unsynced files
-
-**Example output:**
-```
-╭──────────── NervaPack Status ────────────────╮
-│ Graph Health Score: 85/100 ●●●●●●●●○○        │
-│                                              │
-│ 📊 Overview                                  │
-│   Nodes:      1,247                          │
-│   Edges:      3,821                          │
-│   Files:        156                          │
-│   Functions:    892                          │
-│                                              │
-│ 📚 Language Distribution                     │
-│   Python      ████████████░░░░  62.5%  (98)  │
-│   TypeScript  ██████░░░░░░░░░░  35.2%  (55)  │
-│                                              │
-│ 📖 Documentation Coverage                    │
-│   ████████████░░░░░  67.8% (845/1247)        │
-╰──────────────────────────────────────────────╯
+nervapack enrich .                           # auto-detect LLM
+nervapack enrich . --llm ollama --model llama3
+nervapack enrich . --llm claude              # shows cost estimate before proceeding
 ```
 
 ---
 
-### `nervapack history [--stats] [--limit N] [--clear]`
-
-View query history and analytics. All queries are automatically saved to `.nervapack/query_history.jsonl`.
+### `nervapack status [--detailed]` — Graph health
 
 ```bash
-nervapack history              # show last 10 queries
-nervapack history --limit 20   # show last 20
-nervapack history --stats      # aggregate statistics
-nervapack history --clear      # clear all history
+nervapack status            # node/edge counts + unsynced files
+nervapack status --detailed # full analytics: health score, language distribution, coverage
 ```
 
-**Statistics include:**
-- Total queries run
-- Average token savings percentage
-- Total tokens saved across all queries
-- Cost savings (GPT-4o and Claude Sonnet pricing)
-- Most frequently queried topics (word frequency analysis)
+Health score (0–100) factors in documentation coverage, node connectivity, graph density, and edge diversity. A structural-only graph typically scores 30–40; after `enrich` it rises to 70–90.
 
 ---
 
-## Configuration
-
-NervaPack reads the Ollama model from the `LLMSummarizer` class (`src/nervapack/llm/summarizer.py`). To use a different model, set `model` to any model you have pulled locally:
-
-```python
-# src/nervapack/llm/summarizer.py
-self.model = "phi3"   # or "mistral", "codellama", etc.
-```
-
-Ollama is expected at `http://localhost:11434` (its default). To use a remote Ollama instance, set `OLLAMA_HOST`:
+### `nervapack visualize [OPTIONS]` — Interactive HTML graph
 
 ```bash
-OLLAMA_HOST=http://my-server:11434 nervapack ingest .
+nervapack visualize                           # basic visualization
+nervapack visualize --enhanced                # + real-time search + path finder
+nervapack visualize --enhanced --communities  # + community detection (Louvain)
+nervapack visualize --output ~/my-graph.html  # custom output path
+nervapack visualize --no-browser              # generate without opening
+```
+
+Produces a standalone HTML file with no external dependencies — drag, zoom, search, find shortest paths between nodes.
+
+---
+
+### `nervapack explore TARGET [--hops N]` — Focused subgraph
+
+Extract and visualize the N-hop neighbourhood of a specific file, class, or function.
+
+```bash
+nervapack explore GraphBuilder --hops 2
+nervapack explore src/auth/middleware.py --hops 1
+nervapack explore "function:parse"
+```
+
+---
+
+### `nervapack dependencies [FILE]` — Import dependency analysis
+
+Analyze file-level import chains, detect circular dependencies, and visualize the dependency graph.
+
+```bash
+nervapack dependencies                        # full project analysis
+nervapack dependencies src/graph/builder.py   # single file
+nervapack dependencies --no-cycles            # skip cycle detection
+```
+
+---
+
+### `nervapack hotspots [OPTIONS]` — Change frequency analysis
+
+Show which files change most often in git history — prime targets for documentation and review.
+
+```bash
+nervapack hotspots                            # top 20 by commit count
+nervapack hotspots --since "6 months ago"    # recent history only
+nervapack hotspots --ext .py --churn         # Python files, sort by lines changed
+```
+
+---
+
+### `nervapack history [OPTIONS]` — Query history
+
+```bash
+nervapack history              # last 10 queries with token savings
+nervapack history --limit 50   # last 50
+nervapack history --stats      # aggregate: total savings, cost avoided, top topics
+nervapack history --clear      # delete history
+```
+
+---
+
+### `nervapack serve [--port N]` — Web dashboard
+
+```bash
+nervapack serve                # http://localhost:8501
+nervapack serve --port 8080    # custom port
+```
+
+Requires `nervapack[dashboard]`. Shows graph overview, language distribution, analytics, query history trends, and an interactive graph explorer.
+
+---
+
+### `nervapack doctor` — Environment check
+
+```bash
+nervapack doctor
+```
+
+Verifies Python version, tree-sitter grammars, embedding backend, Ollama connectivity, and MCP config. Run this after installation or when troubleshooting.
+
+---
+
+## Storage Layout
+
+Everything lives in `.nervapack/` inside your project root:
+
+```
+.nervapack/
+├── graph.graphml          # NetworkX DiGraph (AST + EXPLAINS edges)
+├── chroma_db/             # ChromaDB vector store (ONNX embeddings)
+├── memory.db              # Agent memory (SQLite + FTS5, bi-temporal)
+├── query_history.jsonl    # Per-query token savings log
+└── graph_history.jsonl    # Ingest/sync event log
+```
+
+Add `.nervapack/` to `.gitignore` to keep it out of version control.
+
+**Disk usage guide:**
+- `chroma_db/` — typically 10–100 MB depending on project size. Run `nervapack clean --vectors && nervapack ingest .` if it grows unexpectedly.
+- `graph.graphml` — typically 0.5–5 MB.
+- `memory.db` — grows with agent usage; rarely exceeds a few MB.
+
+---
+
+## MCP Integration (Claude Code, Cursor, Windsurf)
+
+NervaPack ships two MCP servers in the same package. Drop this `.mcp.json` in your project root:
+
+```json
+{
+  "mcpServers": {
+    "nervapack": {
+      "command": "nervapack-mcp",
+      "description": "NervaPack knowledge graph (v0.6.1) — query, graph_status, explore, impact"
+    },
+    "nervapack-memory": {
+      "command": "nervapack-memory-mcp",
+      "description": "NervaPack agent memory (v0.6.1) — store, recall, and reason over facts across sessions"
+    }
+  }
+}
+```
+
+### Knowledge Graph MCP tools (`nervapack-mcp`)
+
+| Tool | What it does |
+|------|-------------|
+| `query` | Vector search → K-Hop BFS → focused Markdown context + token savings |
+| `graph_status` | Node/edge counts, language breakdown, unsynced file warnings |
+| `explore` | Browse all indexed classes, functions, imports, markdown docs |
+| `impact` | Reverse dependency analysis — find what depends on a given entity |
+
+### Agent Memory MCP tools (`nervapack-memory-mcp`) — 17 tools
+
+| Tool | Purpose |
+|------|---------|
+| `memory_start_session` | Open a named session |
+| `memory_store` | Persist a fact, decision, outcome, procedure, preference, or action |
+| `memory_recall` | FTS5 search → graph expansion → scored, budget-capped recall |
+| `memory_about` | Entity dossier: all facts/decisions linked to one entity |
+| `memory_why` | Explain a decision: rationale, rejected alternatives, outcomes |
+| `memory_timeline` | Chronological trace including superseded versions |
+| `memory_end_session` | Close session with an outcome summary |
+| `memory_forget` | Tombstone or hard-purge nodes |
+| `memory_verify` | Confirm (confidence +0.1) or refute (close + confidence ×0.5) |
+| `memory_stats` | Node counts, DB size, top entities, all namespaces |
+| `memory_list_sessions` | List all sessions with node counts |
+| `memory_clear_session` | Delete a session and all its nodes |
+| `memory_for_code` | Memories that TOUCH a source file or specific line |
+| `memory_to_code` | Code locations a memory node TOUCHES |
+| `memory_import` | Bulk-seed memory from a JSON array |
+| `memory_switch_namespace` | Switch the active namespace |
+| `memory_verify_staleness` | Flag memories whose source file changed since stored |
+
+### CLAUDE.md template
+
+Add to your `CLAUDE.md` to wire NervaPack into every Claude Code session:
+
+```markdown
+## Always use NervaPack MCP tools
+
+At the start of every session:
+1. Call `memory_start_session("<task name>")` to open a named session.
+2. Call `memory_recall("project context", budget_tokens=400)` to load prior decisions.
+3. Call `query("<topic>")` before answering any question about how the code works.
+
+During the session — call `memory_store` for:
+- Any decision made (kind="decision" with rationale and alternatives_rejected)
+- Any fact discovered about system behaviour (kind="fact")
+- Any procedure or convention established (kind="procedure")
+
+At session end — call `memory_end_session("<one-paragraph summary>")`.
 ```
 
 ---
@@ -536,207 +453,62 @@ OLLAMA_HOST=http://my-server:11434 nervapack ingest .
 ```
 nervapack ingest .
        │
-       ├─ ASTParser (tree-sitter)          16 extensions, 9 languages
+       ├─ ASTParser (tree-sitter)               16 extensions, 10 languages
        │    └─ ParsedEntity[]: class, function, import
        │
        ├─ GraphBuilder (NetworkX DiGraph)
        │    ├─ Nodes: file, class, function, import, markdown
-       │    └─ Edges: DEFINES, EXPLAINS
+       │    ├─ Edges: DEFINES (AST, confidence=1.0)
+       │    ├─ Edges: REFERENCES (heuristic name overlap, confidence=0.7)
+       │    └─ Edges: EXPLAINS (LLM or keyword binding, confidence=0.5–0.9)
        │
-       ├─ LLMSummarizer (Ollama)
-       │    └─ Draws EXPLAINS edges: markdown → code entity
+       ├─ VectorStore (ChromaDB)
+       │    ├─ Embedding: ONNX (default) or Ollama
+       │    └─ upsert — re-ingest is idempotent
        │
-       └─ VectorStore (ChromaDB)
-            └─ Embeds node summaries for semantic search
+       └─ GraphHistory  — snapshot recorded after each ingest/sync
 
 nervapack query "..."
        │
+       ├─ Intent detection (impact / exact / semantic)
        ├─ VectorStore.search() → seed node IDs
-       ├─ GraphRetriever.retrieve_context() → BFS subgraph → Markdown
-       └─ TokenMeter → savings vs. naive RAG (tokens, %, cost)
+       ├─ GraphRetriever.retrieve_context()
+       │    └─ deque BFS, direction: forward / reverse / both
+       ├─ MemoryStore.get_touches_for_file() → memory context injection
+       └─ TokenMeter → savings vs. naive RAG
 
-nervapack visualize
-       │
-       └─ Visualizer (pyvis) → .nervapack/graph.html
+nervapack clean --all
+       └─ Deletes chroma_db/, graph.graphml, history logs
+          Never touches memory.db
 ```
 
-**Storage layout** (inside your project root):
-```
-.nervapack/
-├── graph.graphml       # NetworkX graph (deterministic structure)
-├── graph.html          # Interactive visualization (generated by visualize)
-└── chroma_db/          # ChromaDB (semantic embeddings)
-```
+**Key source modules:**
 
-**Source modules:**
 | Module | Responsibility |
-|---|---|
-| `nervapack.parser.language_registry` | Declarative registry of 16 file extensions and their tree-sitter grammars |
-| `nervapack.parser.ast_parser` | Tree-sitter parsing → `ParsedEntity` objects |
-| `nervapack.parser.md_chunker` | Markdown → header-delimited chunks |
-| `nervapack.graph.builder` | Build and persist the NetworkX DiGraph |
-| `nervapack.graph.vector_store` | ChromaDB ingest and semantic search |
-| `nervapack.graph.retrieval` | K-Hop BFS context extraction |
-| `nervapack.graph.visualizer` | pyvis interactive HTML export |
-| `nervapack.graph.visualizer_v2` | Enhanced visualizer with search, communities, path finding |
-| `nervapack.graph.dependency_analyzer` | File-level dependency analysis and cycle detection |
-| `nervapack.graph.analytics` | Health scoring, language distribution, coverage metrics |
-| `nervapack.graph.query_history` | Query tracking and aggregate analytics |
-| `nervapack.graph.token_meter` | Token counting and savings panel |
-| `nervapack.dashboard.app` | Streamlit web dashboard with interactive charts |
-| `nervapack.llm.summarizer` | Local Ollama interface for LLM binding |
-| `nervapack.git.tracker` | GitPython diff for incremental sync |
-| `nervapack.mcp_server` | MCP server for Claude Code/Cursor integration |
+|--------|---------------|
+| `nervapack.parser.ast_parser` | tree-sitter parsing → `ParsedEntity`; shared singleton parser instance |
+| `nervapack.parser.md_chunker` | Markdown → header-delimited chunks; prunes build dirs from os.walk |
+| `nervapack.graph.builder` | NetworkX DiGraph; O(1) file-index for sync; compiled regex for REFERENCES |
+| `nervapack.graph.vector_store` | ChromaDB upsert (idempotent); pluggable embedding function |
+| `nervapack.graph.retrieval` | K-Hop BFS with `deque` (O(n) not O(n²)) |
+| `nervapack.graph.token_meter` | tiktoken singleton; token savings panel |
+| `nervapack.graph.query_history` | Tail-read JSONL — O(limit) not O(total) |
+| `nervapack.graph.analytics` | Bulk `graph.degree()` — single call not per-node loop |
+| `nervapack.llm.base` | `bind_docs_to_ast` with keyword pre-filter (top-12 candidates) |
+| `nervapack.llm.providers.ollama` | `ollama.list()` cached 60 s |
+| `nervapack.memory.store` | SQLite + FTS5; bi-temporal; `batch_neighbors` for O(1) hop expansion |
+| `nervapack.memory.recall` | Batched hop expansion; audit trail on recall |
+| `nervapack.mcp_server` | FastMCP — `query`, `graph_status`, `explore`, `impact` |
+| `nervapack.memory.mcp_server` | FastMCP — 17 memory tools |
 
 ---
 
-## Privacy
-
-NervaPack is 100% offline. No code, documentation, or query ever leaves your machine:
-
-- Embeddings are generated by ChromaDB's built-in local model.
-- LLM calls go exclusively to `localhost:11434` (your Ollama instance).
-- All graph and vector data is stored in `.nervapack/` inside your project.
-
-Add `.nervapack/` to your `.gitignore` to keep it out of version control.
-
----
-
-## Using NervaPack in LLM Developer Tools
-
-NervaPack ships a built-in MCP server, so any MCP-compatible tool (Claude Code, Cursor, etc.) can use it as a native context provider — no custom code required.
-
-### Setup (one-time per project)
-
-**1. Install the MCP extra:**
-```bash
-pip install "nervapack[mcp]"
-```
-
-**2. Build the graph:**
-```bash
-nervapack ingest .
-```
-
-**3. Add `.mcp.json` to your project root:**
-```json
-{
-  "mcpServers": {
-    "nervapack": {
-      "command": "nervapack-mcp",
-      "description": "NervaPack knowledge graph — query_codebase, graph_status, list_entities"
-    }
-  }
-}
-```
-
-That's it. Reload your MCP-compatible tool and NervaPack's tools appear automatically.
-
-### Tools exposed
-
-| Tool | What it does |
-|---|---|
-| `query_codebase(prompt, max_hops?)` | Vector search → K-Hop BFS → focused Markdown context + token savings summary |
-| `graph_status()` | Node/edge counts by type, language breakdown, unsynced file warnings |
-| `list_entities(entity_type?, file_path?)` | Browse all indexed classes, functions, imports, markdown docs |
-
-### How Claude Code uses it
-
-Once `.mcp.json` is in place, Claude Code automatically calls `query_codebase` before answering questions about the codebase. Instead of reading whole files, it gets a surgical subgraph of only the relevant code — the same token savings you see in the CLI dashboard, applied to every single response.
-
-```
-You:     "How does the sync command decide which files to re-ingest?"
-Claude:  → calls query_codebase("sync command file re-ingest logic")
-         → gets 1,180 tokens of focused context (vs 12,840 tokens naive)
-         → answers precisely, citing exact line numbers
-```
-
-### Keeping the graph fresh
-
-```bash
-# After modifying files
-nervapack sync .
-
-# Check if Claude's context is stale
-# (graph_status tool reports this automatically)
-```
-
-### Python SDK (for building your own tool)
-
-```python
-from nervapack.graph.builder import GraphBuilder
-from nervapack.graph.vector_store import VectorStore
-from nervapack.graph.retrieval import GraphRetriever
-
-graph = GraphBuilder().load_graph()
-retriever = GraphRetriever(graph)
-results = VectorStore().search("your query", n_results=3)
-start_nodes = results["ids"][0]
-subgraph = retriever.retrieve_context(start_nodes, max_hops=1)
-context = retriever.format_as_markdown(subgraph)
-# Inject context into your LLM system prompt
-```
-
----
-
-## nervapack.memory — Conversation Context Extender
+## nervapack.memory — Agent Memory
 
 Stop re-pasting project context into every new chat.
 
-Every developer using an AI assistant on an ongoing project hits the same wall: Monday you explain the architecture and decisions. Wednesday, new tab, blank slate — you explain them again. `nervapack.memory` fixes this. It accumulates structured context across sessions and delivers a complete project briefing — 30 days of decisions and conventions — in under 200 tokens.
-
-```
-Session 1:  "Chose JWT for auth — stateless scaling"                → 8 tokens stored
-Session 2:  "auth_service issues 15-min tokens"                     → 7 tokens stored
-Session 3:  "Deploy: GitHub Actions → staging → manual prod"        → 9 tokens stored
-            ...4 weeks later...
-
-memory_recall("project context", budget_tokens=400)
-→ 6 items · 171/400 tokens    ← full project briefing, guaranteed ≤ 400 tokens
-```
-
-The bi-temporal model keeps only **current truth**: old decisions superseded by new ones don't surface. Budget enforcement is a hard invariant — recall never bloats your context window.
-
-### Quickstart (5 minutes)
-
-**1. Install**
-
-```bash
-pip install "nervapack[memory]"
-nervapack-memory init
-# ✓ Memory store initialised at .nervapack/memory.db
-```
-
-**2. Add to `.mcp.json`**
-
-```json
-{
-  "mcpServers": {
-    "nervapack": {
-      "command": "nervapack-mcp"
-    },
-    "nervapack-memory": {
-      "command": "nervapack-memory-mcp"
-    }
-  }
-}
-```
-
-**3. Recommended session protocol (add to CLAUDE.md or system prompt)**
-
-```markdown
-At the start of every session:
-1. Call memory_start_session("task name").
-2. Call memory_recall("project context", budget_tokens=400) — this is your briefing.
-3. Call memory_recall on any specific topic before working on it.
-
-During the session, store decisions, facts, conventions, and outcomes.
-At session end, call memory_end_session("summary").
-```
-
-**4. Store a decision with full context**
-
 ```python
+# Store a decision
 memory_store(
     "Chose JWT over session cookies for auth_service — stateless horizontal scaling",
     kind="decision",
@@ -745,174 +517,71 @@ memory_store(
     rationale="Stateless tokens enable horizontal scaling without shared session store.",
     alternatives_rejected=["server-side sessions", "PASETO"],
 )
-```
 
-**5. Recall in any future session**
-
-```python
+# Recall in any future session
 memory_recall("project context", budget_tokens=400)
 ```
 
-Output:
 ```
-## Memory recall: "project context" (as of 2026-07-05 · 6 items · 171/400 tokens)
+## Memory recall: "project context" (6 items · 171/400 tokens)
 
 ### Decisions
-- [d_0019f2] 2026-06-05 · conf 0.90 — Chose JWT for auth_service — stateless horizontal scaling
-- [d_0019f4] 2026-06-12 · conf 0.95 — CockroachDB replaces Postgres for geo-distributed writes
+- [d_0019f2] 2026-06-05 · conf 0.90 — Chose JWT for auth_service
 
 ### Facts
-- [f_0019f3] 2026-06-05 · conf 1.00 — auth_service issues 15-min access tokens with rotating refresh
-- [f_0019f7] 2026-06-19 · conf 1.00 — payment_service ~8k txn/day at p99 < 200ms
+- [f_0019f3] 2026-06-05 · conf 1.00 — auth_service issues 15-min access tokens
 
 ### Procedures
-- [p_0019f5] 2026-06-12 · conf 1.00 — Deploy: GitHub Actions → staging auto → prod manual approval
-
-### Preferences
-- [pr_0019f6] 2026-06-12 · conf 1.00 — All new services must expose /health and /metrics endpoints
+- [p_0019f5] 2026-06-12 · conf 1.00 — Deploy: GitHub Actions → staging → prod manual
 ```
 
-### Token Efficiency: Memory vs. Paste
+**Token efficiency:**
 
 | Approach | Tokens per session | After 20 sessions |
-|----------|-------------------|-------------------|
+|----------|--------------------|-------------------|
 | Manual paste (architecture doc) | ~2,400 | ~48,000 |
-| Manual paste (recent notes) | ~800 | ~16,000 |
 | `memory_recall` | **~171** | **~3,420** |
-| **Savings** | — | **93% fewer tokens** |
+| **Savings** | | **93% fewer tokens** |
 
-### Seeding From Existing Notes
-
-Load your decision log or conventions in one pass:
-
-```python
-from nervapack.memory import MemoryStore
-
-store = MemoryStore()
-decisions = [
-    ("Chose JWT for auth_service — stateless scaling", "decision", ["auth_service"]),
-    ("CockroachDB replaces Postgres for geo-distributed writes", "decision", ["database"]),
-    ("All new services must expose /health and /metrics", "preference", []),
-    ("Deploy via GitHub Actions → staging → manual prod approval", "procedure", []),
-]
-for content, kind, entities in decisions:
-    nid = store.add_node(kind=kind, content=content, confidence=1.0)
-    print(f"Seeded [{nid}] {content[:50]}")
-```
-
-### Data Model
-
-**8 node kinds:** `fact`, `decision`, `action`, `outcome`, `entity`, `procedure`, `preference`, `session`
-
-**7 edge kinds:** `ABOUT`, `OCCURRED_IN`, `SUPERSEDES`, `CONTRADICTS`, `CAUSED`, `DERIVED_FROM`, `TOUCHES`
-
-**Bi-temporal:** every node has `valid_from`/`valid_until` (world-time) and `recorded_at` (learn-time). Supersede closes the old window; rows are never deleted in normal operation.
-
-```
-d_aaa  "session cookies"  valid_from=2026-01-01  valid_until=2026-06-01
-  └─[SUPERSEDES]
-d_bbb  "JWT"              valid_from=2026-06-01  valid_until=NULL (current)
-
-memory_recall("auth")              → returns d_bbb only (current truth)
-memory_recall("auth", as_of=...)  → returns d_aaa only (point-in-time)
-memory_timeline("auth")           → returns both (d_aaa marked [superseded])
-```
-
-### MCP Tools (17 total)
-
-| Tool | Purpose |
-|------|---------|
-| `memory_start_session` | Open a named session (e.g. "JWT refactor"); optional `namespace` param |
-| `memory_store` | Persist a fact, decision, outcome, procedure, preference, or action; optional `namespace` param |
-| `memory_recall` | FTS5 search → graph expansion → scored, budget-capped recall; optional `namespace` param |
-| `memory_about` | Entity dossier: all current facts/decisions linked to one entity |
-| `memory_why` | Explain a decision: rationale, rejected alternatives, caused outcomes |
-| `memory_timeline` | Chronological trace including superseded versions |
-| `memory_end_session` | Close session with an outcome summary + queues consolidation |
-| `memory_forget` | Tombstone (soft) or hard-purge nodes |
-| `memory_verify` | `confirm` → confidence +0.1; `refute` → close + confidence ×0.5 |
-| `memory_list_sessions` | List all sessions with node counts |
-| `memory_clear_session` | Delete a session and all its nodes |
-| `memory_stats` | Node counts, DB size, top entities by degree; optional `namespace` param |
-| `memory_for_code` | Memories that TOUCH a source file (optionally at a line) |
-| `memory_to_code` | Code locations a memory node TOUCHES (file, line range, type) |
-| `memory_import` | Bulk-seed memory from a JSON array of node specs |
-| `memory_switch_namespace` | Switch active namespace (resets session; all writes go to new NS) |
-| `memory_verify_staleness` | Scan TOUCHES edges; flag memories where source file changed since stored |
-
-### Recall Pipeline
-
-```
-query
-  ├─ 1. FTS5 BM25 search (exact → prefix* → OR fallback)
-  ├─ 2. Graph expansion (0.6× relevance decay per hop, up to 2 hops)
-  ├─ 3. Temporal mask (exclude superseded, tombstoned, out-of-window)
-  ├─ 4. Confidence filter (min_confidence threshold, default 0.0)
-  ├─ 5. Score: relevance × recency × frequency × connectivity
-  └─ 6. Budget pack (greedy fill, hard invariant: result ≤ budget_tokens)
-```
-
-### CLI
-
+**CLI:**
 ```bash
-nervapack-memory init                             # create schema
-nervapack-memory start-session "Task name"        # open a named session
-nervapack-memory stats                            # counts + top entities
-nervapack-memory sessions                         # list all sessions
-nervapack-memory search "JWT auth"               # FTS search
-nervapack-memory show f_0019f2...                 # inspect a node
-nervapack-memory forget --node-id f_0019f2...    # tombstone
-nervapack-memory forget --entity old_svc --purge # hard-delete
-nervapack-memory export --out dump.json           # JSON dump
-nervapack-memory import seed.json                 # bulk seed from JSON file
-nervapack-memory consolidate                      # deduplicate pending session facts
-nervapack-memory consolidate --dry-run            # preview without changes
+nervapack-memory init                          # create schema
+nervapack-memory stats                         # counts + top entities
+nervapack-memory search "JWT auth"             # FTS search
+nervapack-memory timeline "auth service"       # chronological trace
+nervapack-memory audit d_0019f2abc             # access audit trail
+nervapack-memory rebind old/path.py new/path.py  # update file links after rename
+nervapack-memory export --out dump.json        # JSON dump
 ```
 
-### Storage
+**Data model:** 8 node kinds, 7 edge kinds, bi-temporal (`valid_from`/`valid_until`), never hard-deletes by default.
 
-| Path | When used |
-|------|-----------|
-| `.nervapack/memory.db` | Default when `.nervapack/` dir exists |
-| `~/.nervapack/memory.db` | Global fallback (created automatically) |
-| `$NERVAPACK_MEMORY_DB` | Override via environment variable |
+---
 
-### Combined With the Code Graph
+## Privacy
 
-Used together, the two NervaPack servers cover the full context problem:
+NervaPack is 100% offline by default:
 
-```
-nervapack-mcp (code graph)          nervapack-memory-mcp (agent memory)
-────────────────────────────        ──────────────────────────────────────
-"How does auth_service work?"  +    "Why was JWT chosen for auth_service?"
-"Which functions call login()?"     "What did we decide last sprint?"
-"What does this class import?"      "What's the deploy procedure?"
-↓                                   ↓
-AST-precise, 91% token reduction    Decision-precise, budget-capped recall
-```
+- Embeddings use ChromaDB's built-in ONNX model (runs on CPU, no cloud).
+- LLM calls (when using Ollama) go to `localhost:11434` only.
+- All graph and vector data lives in `.nervapack/` inside your project.
+- No telemetry, no analytics, no network calls at runtime.
 
-### Design
-
-- **Standalone SQLite + FTS5** — the code graph (NetworkX + ChromaDB) is immutable between ingest cycles and has no temporal semantics. A separate SQLite file is the right substrate for mutable, session-scoped memory.
-- **Facts, not chunks** — recall returns atomic assertions (8–30 tokens each) with provenance, not transcript segments.
-- **Bi-temporal, never delete** — supersede closes the old `valid_until`; only `memory_forget(purge=True)` hard-deletes.
-- **No network at runtime** — all storage, search, and scoring is local. No embeddings at query time.
-- **Hard token invariant** — `pack()` guarantees the result always fits in `budget_tokens`. No surprises.
+Only if you explicitly pass `--llm claude` or `--llm openai` does any code leave your machine.
 
 ---
 
 ## Contributing
 
 1. Fork the repo and create a branch.
-2. Make your changes with tests where applicable.
-3. Open a pull request against `master`.
+2. Run tests: `python3 -m pytest tests/memory/ -q`
+3. Run docs check: `python3 -m mkdocs build --strict`
+4. Open a pull request against `master`.
 
-Bug reports and feature requests go to the [issue tracker](https://github.com/ramdhavepreetam/NervaPack/issues).
+Bug reports and feature requests: [issue tracker](https://github.com/ramdhavepreetam/NervaPack/issues).
 
 ---
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
-
-<!-- mcp-name: io.github.ramdhavepreetam/nervapack -->

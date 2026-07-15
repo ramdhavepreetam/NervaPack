@@ -58,6 +58,10 @@ CREATE INDEX IF NOT EXISTS idx_nodes_validity  ON mem_nodes(valid_until, tombsto
 CREATE INDEX IF NOT EXISTS idx_nodes_namespace ON mem_nodes(namespace);
 CREATE INDEX IF NOT EXISTS idx_edges_src       ON mem_edges(src, kind);
 CREATE INDEX IF NOT EXISTS idx_edges_dst       ON mem_edges(dst, kind);
+-- Covering index for the NOT IN (SELECT dst ... WHERE kind='SUPERSEDES') subquery in fts_search
+CREATE INDEX IF NOT EXISTS idx_edges_supersedes_dst ON mem_edges(dst) WHERE kind = 'SUPERSEDES';
+-- Speed up audit trail lookups per memory node
+CREATE INDEX IF NOT EXISTS idx_audit_memory_id ON mem_audit(memory_id);
 
 -- FTS5 external-content table. Triggers below keep it in sync with mem_nodes.
 -- content_rowid maps to the hidden integer rowid of mem_nodes (not the TEXT id).

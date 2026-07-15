@@ -104,7 +104,22 @@ class ASTParser:
 
 
 _SUPPORTED_EXTENSIONS = set(LANGUAGE_REGISTRY.keys())
-_SKIP_DIRS = {".git", "node_modules", "venv", "__pycache__", ".nervapack"}
+_SKIP_DIRS = {
+    ".git", "node_modules", "venv", ".venv", "env", "__pycache__",
+    ".nervapack",
+    # build outputs
+    "dist", "build", "site", "target", "out", "output",
+    # Python tooling
+    ".eggs", ".tox", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+    # coverage / test artefacts
+    "htmlcov", "coverage",
+    # JS/TS frameworks
+    ".next", ".nuxt", ".svelte-kit", ".turbo",
+    # JVM
+    "bin", ".gradle",
+    # IDEs
+    ".idea", ".vscode",
+}
 
 
 def _load_ignore_patterns(directory: str) -> List[str]:
@@ -141,8 +156,15 @@ def _is_ignored(path: str, root: str, patterns: List[str]) -> bool:
     return False
 
 
-def scan_directory(directory: str) -> List[ParsedEntity]:
-    parser = ASTParser()
+_shared_parser: ASTParser | None = None
+
+
+def scan_directory(directory: str, parser: ASTParser | None = None) -> List[ParsedEntity]:
+    global _shared_parser
+    if parser is None:
+        if _shared_parser is None:
+            _shared_parser = ASTParser()
+        parser = _shared_parser
     all_entities: List[ParsedEntity] = []
     ignore_patterns = _load_ignore_patterns(directory)
     abs_root = str(Path(directory).resolve())
@@ -152,6 +174,7 @@ def scan_directory(directory: str) -> List[ParsedEntity]:
         dirs[:] = [
             d for d in dirs
             if d not in _SKIP_DIRS
+            and not d.endswith((".egg-info", ".dist-info"))
             and not _is_ignored(os.path.join(root, d), abs_root, ignore_patterns)
         ]
         for file in files:

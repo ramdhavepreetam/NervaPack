@@ -1,4 +1,5 @@
 import networkx as nx
+from collections import deque
 from typing import List, Set, Dict, Tuple, Optional
 from dataclasses import dataclass
 
@@ -31,16 +32,16 @@ class GraphRetriever:
         Also tracks metadata about the traversal which can be accessed via self.last_metadata.
         """
         visited = set()
-        queue = [(node_id, 0) for node_id in start_node_ids if self.graph.has_node(node_id)]
+        seed_nodes = [nid for nid in start_node_ids if self.graph.has_node(nid)]
+        queue: deque = deque((node_id, 0) for node_id in seed_nodes)
 
         subgraph_nodes = set()
-        seed_nodes = [nid for nid in start_node_ids if self.graph.has_node(nid)]
         expanded_nodes = []
         edges_followed = []
         max_depth_reached = 0
 
         while queue:
-            current_node, hops = queue.pop(0)
+            current_node, hops = queue.popleft()
 
             if current_node in visited:
                 continue

@@ -67,8 +67,7 @@ def ingest(
     console.print("Building deterministic Structural Graph...")
     builder = GraphBuilder()
     graph = builder.build_from_entities(entities)
-    builder.save_graph()
-    console.print(f"Graph saved with {graph.number_of_nodes()} nodes and {graph.number_of_edges()} edges.")
+    console.print(f"Graph built with {graph.number_of_nodes()} nodes and {graph.number_of_edges()} edges.")
 
     console.print("Ingesting AST nodes into Vector Store...")
     try:
@@ -177,19 +176,20 @@ def ingest(
                     if graph.has_node(matched_id):
                         graph.add_edge(md_node_id, matched_id, relation="EXPLAINS", source=source, confidence=confidence)
 
-            builder.save_graph()
             console.print("Semantic binding complete.")
 
     except Exception as e:
         console.print(f"[bold red]Error during ingestion:[/bold red] {e}")
 
-    # Record graph snapshot for temporal tracking
+    # Single graph save — done once after all work (structural + doc binding)
+    builder.save_graph()
+    console.print(f"Graph saved with {graph.number_of_nodes()} nodes and {graph.number_of_edges()} edges.")
+
+    # Record graph snapshot for temporal tracking (reuse in-memory graph, no disk reload)
     try:
         from nervapack.graph.analytics import GraphAnalytics
         from nervapack.graph.graph_history import GraphHistory
-        _builder = GraphBuilder()
-        _g = _builder.load_graph()
-        GraphHistory().record_from_analytics(GraphAnalytics(_g), trigger="ingest")
+        GraphHistory().record_from_analytics(GraphAnalytics(graph), trigger="ingest")
     except Exception:
         pass
 
@@ -236,56 +236,55 @@ def sync(path: str = typer.Argument(".", help="Path to the repository to sync"))
     ast_parser = ASTParser()
     md_chunker = MarkdownChunker()
     
-    ast_docs = []
-    
-    # Pre-gather all existing ast_docs for LLM binding
-    # We reconstruct a simple mock summary for existing nodes just for binding if needed.
-    # In a real app, we'd pull these from the graph directly.
-    for node, data in graph.nodes(data=True):
-        if data.get("type") in ["class", "function", "import"]:
-            ast_docs.append({
-                "node_id": node,
-                "summary": f"This is a {data.get('type')} named {data.get('name')} in {data.get('file_path')}. Code:\n{data.get('content')}"
-            })
+    # ast_docs accumulates summaries from all changed code files for doc binding
+    ast_docs: list = []
 
     for f in changed_files:
         file_path = os.path.join(path, f)
-        
+
         # 1. Prune old nodes and vectors
         builder.remove_nodes_for_file(file_path)
         vstore.delete_by_file(file_path)
-        
+
         if not os.path.exists(file_path):
             console.print(f"Removed [red]{f}[/red]")
             continue
-            
+
         # 2. Re-parse and insert
         if file_path.endswith(_CODE_EXTS):
             entities = ast_parser.parse_file(file_path)
-            
+
             # Add to graph
             file_node_id = f"file:{file_path}"
             if not graph.has_node(file_node_id):
                 graph.add_node(file_node_id, type="file", path=file_path)
-                
+
+            new_summaries = []
             for entity in entities:
                 entity_node_id = f"{entity.type}:{entity.file_path}:{entity.name}:{entity.start_line}"
                 graph.add_node(
-                    entity_node_id, 
-                    type=entity.type, 
-                    name=entity.name, 
+                    entity_node_id,
+                    type=entity.type,
+                    name=entity.name,
                     file_path=entity.file_path,
                     start_line=entity.start_line,
                     end_line=entity.end_line,
                     content=entity.content
                 )
                 graph.add_edge(file_node_id, entity_node_id, relation="DEFINES")
-                
-                # Add to vector store
-                node_summary = {"node_id": entity_node_id, "summary": f"This is a {entity.type} named {entity.name} in {entity.file_path}. Code:\n{entity.content}", "file_path": entity.file_path}
-                vstore.ingest_ast_entities([node_summary])
-                ast_docs.append(node_summary)
-                
+                new_summaries.append({
+                    "node_id": entity_node_id,
+                    "summary": f"This is a {entity.type} named {entity.name} in {entity.file_path}. Code:\n{entity.content}",
+                    "file_path": entity.file_path,
+                })
+
+            # Single batched write — avoids one ChromaDB transaction per entity
+            if new_summaries:
+                vstore.ingest_ast_entities(new_summaries)
+
+            # Accumulate for doc binding across all changed files
+            ast_docs.extend(new_summaries)
+
             console.print(f"Updated AST for [green]{f}[/green]")
             
         elif file_path.endswith('.md'):
@@ -352,21 +351,26 @@ def query(prompt: str = typer.Argument(..., help="Query to run against the knowl
     direction = "both"
     start_nodes = []
 
+    # Build a single name→[node_id] index in one pass (avoids two O(N) scans)
+    name_index: dict = {}
+    for n, d in graph.nodes(data=True):
+        nm = d.get("name")
+        if nm:
+            name_index.setdefault(nm, []).append(n)
+
     # 1. Check for impact intent
     prompt_lower = prompt.lower()
     if prompt_lower.startswith("what breaks if i change ") or "impact of" in prompt_lower:
         intent = "impact"
         direction = "reverse"
-        # Try to extract exact symbol from impact query (simple heuristic)
-        words = prompt.split()
-        target = words[-1].strip("?")
-        matching_nodes = [n for n, d in graph.nodes(data=True) if d.get('name') == target]
+        target = prompt.split()[-1].strip("?")
+        matching_nodes = name_index.get(target, [])
         if matching_nodes:
             start_nodes = matching_nodes
-            
+
     # 2. Check for exact symbol match
     if not start_nodes and intent != "impact":
-        matching_nodes = [n for n, d in graph.nodes(data=True) if d.get('name') == prompt]
+        matching_nodes = name_index.get(prompt, [])
         if matching_nodes:
             intent = "exact"
             start_nodes = matching_nodes
@@ -655,14 +659,14 @@ def explore(
     # Extract ego network (N-hop neighborhood)
     console.print(f"\n[cyan]Extracting {hops}-hop neighborhood...[/cyan]")
 
+    from collections import deque as _deque
     all_neighbors = set(matching_nodes)
     for seed_node in matching_nodes:
-        # Use BFS to get N-hop neighborhood
-        visited = set()
-        queue = [(seed_node, 0)]
+        visited: set = set()
+        bfs_queue: _deque = _deque([(seed_node, 0)])
 
-        while queue:
-            current, depth = queue.pop(0)
+        while bfs_queue:
+            current, depth = bfs_queue.popleft()
             if current in visited or depth > hops:
                 continue
 
@@ -670,13 +674,12 @@ def explore(
             all_neighbors.add(current)
 
             if depth < hops:
-                # Add successors and predecessors
                 for neighbor in graph.successors(current):
                     if neighbor not in visited:
-                        queue.append((neighbor, depth + 1))
+                        bfs_queue.append((neighbor, depth + 1))
                 for neighbor in graph.predecessors(current):
                     if neighbor not in visited:
-                        queue.append((neighbor, depth + 1))
+                        bfs_queue.append((neighbor, depth + 1))
 
     # Create subgraph
     subgraph = graph.subgraph(all_neighbors).copy()
@@ -1435,6 +1438,111 @@ def doctor():
             console.print(f"  {i}. {issue}")
     else:
         console.print("\n[bold green]All systems go! NervaPack is ready.[/bold green]")
+
+
+@app.command()
+def clean(
+    vectors: bool = typer.Option(False, "--vectors", help="Wipe the ChromaDB vector store only"),
+    graph: bool = typer.Option(False, "--graph", help="Delete the GraphML file only"),
+    history: bool = typer.Option(False, "--history", help="Clear query history only"),
+    all_data: bool = typer.Option(False, "--all", help="Wipe everything: vectors + graph + history (keeps memory.db)"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
+    path: str = typer.Option(".", help="Project root (where .nervapack/ lives)"),
+):
+    """
+    Remove ingested graph data so you can start fresh.
+
+    Use this when you have duplicate vectors, a corrupt graph, or wrong data ingested.
+
+    Examples:
+      nervapack clean --vectors          # Clear duplicate ChromaDB embeddings only
+      nervapack clean --graph            # Delete graph.graphml only
+      nervapack clean --all              # Full wipe (vectors + graph + history)
+      nervapack clean --all --yes        # Same, skip confirmation
+    """
+    import os
+    import shutil
+    from rich.prompt import Confirm
+    from rich.table import Table
+    from rich import box
+
+    nervapack_dir = os.path.join(path, ".nervapack")
+
+    chroma_path   = os.path.join(nervapack_dir, "chroma_db")
+    graphml_path  = os.path.join(nervapack_dir, "graph.graphml")
+    history_path  = os.path.join(nervapack_dir, "query_history.jsonl")
+    gh_path       = os.path.join(nervapack_dir, "graph_history.jsonl")
+
+    if not any([vectors, graph, history, all_data]):
+        console.print("[bold yellow]Nothing selected.[/bold yellow] Specify what to clean:\n")
+        console.print("  [cyan]--vectors[/cyan]   Wipe ChromaDB vector store (fixes duplicate embeddings)")
+        console.print("  [cyan]--graph[/cyan]     Delete graph.graphml (fixes corrupt/wrong graph)")
+        console.print("  [cyan]--history[/cyan]   Clear query + graph history logs")
+        console.print("  [cyan]--all[/cyan]       Everything above (full reset, keeps memory.db)\n")
+        console.print("Add [cyan]--yes[/cyan] to skip the confirmation prompt.")
+        raise typer.Exit(0)
+
+    # Determine what will actually be touched
+    targets: list[tuple[str, str, str]] = []
+
+    if vectors or all_data:
+        if os.path.isdir(chroma_path):
+            size = sum(
+                os.path.getsize(os.path.join(dp, f))
+                for dp, _, files in os.walk(chroma_path)
+                for f in files
+            )
+            targets.append(("ChromaDB vector store", chroma_path, f"{size / 1_048_576:.1f} MB"))
+        else:
+            console.print("[dim]ChromaDB directory not found — already clean.[/dim]")
+
+    if graph or all_data:
+        if os.path.exists(graphml_path):
+            size = os.path.getsize(graphml_path)
+            targets.append(("Graph (graph.graphml)", graphml_path, f"{size / 1_048_576:.1f} MB"))
+        else:
+            console.print("[dim]graph.graphml not found — already clean.[/dim]")
+
+    if history or all_data:
+        for hpath, label in [(history_path, "Query history"), (gh_path, "Graph history")]:
+            if os.path.exists(hpath):
+                size = os.path.getsize(hpath)
+                targets.append((label, hpath, f"{size / 1024:.1f} KB"))
+
+    if not targets:
+        console.print("[bold green]Nothing to clean — everything is already empty.[/bold green]")
+        raise typer.Exit(0)
+
+    # Show what will be deleted
+    table = Table(box=box.SIMPLE, show_header=True, header_style="bold red")
+    table.add_column("What", style="white")
+    table.add_column("Path", style="dim")
+    table.add_column("Size", justify="right", style="yellow")
+    for label, tpath, size_str in targets:
+        table.add_row(label, tpath, size_str)
+
+    console.print("\n[bold red]The following will be permanently deleted:[/bold red]")
+    console.print(table)
+    console.print("[dim]Note: memory.db (agent memory) is never touched by clean.[/dim]\n")
+
+    if not yes:
+        confirmed = Confirm.ask("[bold red]Proceed?[/bold red]")
+        if not confirmed:
+            console.print("[yellow]Aborted. Nothing deleted.[/yellow]")
+            raise typer.Exit(0)
+
+    # Execute deletions
+    for label, tpath, _ in targets:
+        try:
+            if os.path.isdir(tpath):
+                shutil.rmtree(tpath)
+            else:
+                os.remove(tpath)
+            console.print(f"[green]✓ Deleted:[/green] {label}")
+        except Exception as e:
+            console.print(f"[red]✗ Failed to delete {label}:[/red] {e}")
+
+    console.print("\n[bold green]Clean complete.[/bold green] Run [cyan]nervapack ingest .[/cyan] to rebuild.")
 
 
 if __name__ == "__main__":

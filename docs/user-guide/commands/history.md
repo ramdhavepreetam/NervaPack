@@ -90,7 +90,10 @@ Most Queried Topics:
 
 Every `nervapack query` run appends a JSON record to
 `.nervapack/query_history.jsonl`. The file is append-only and human-readable.
-Use `--clear` to delete it.
+
+Use `--clear` to delete history via the CLI. Alternatively, `nervapack clean --history` deletes both `query_history.jsonl` and `graph_history.jsonl` as part of a broader data-cleanup workflow.
+
+Reads are tail-based (O(limit) not O(file size)) — querying the last 10 records from a large history file reads only the final few KB, never the full file.
 
 ---
 

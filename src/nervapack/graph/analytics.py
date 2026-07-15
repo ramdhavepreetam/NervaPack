@@ -82,15 +82,14 @@ class GraphAnalytics:
         Returns:
             List of (node_id, degree) tuples sorted by degree descending
         """
-        degrees = []
-        for node_id in self.graph.nodes():
-            if node_type:
-                node_data = self.graph.nodes[node_id]
-                if node_data.get("type") != node_type:
-                    continue
-            degree = self.graph.degree(node_id)
-            degrees.append((node_id, degree))
-
+        all_degrees = dict(self.graph.degree())
+        if node_type:
+            degrees = [
+                (nid, deg) for nid, deg in all_degrees.items()
+                if self.graph.nodes[nid].get("type") == node_type
+            ]
+        else:
+            degrees = list(all_degrees.items())
         degrees.sort(key=lambda x: x[1], reverse=True)
         return degrees[:n]
 
@@ -135,11 +134,7 @@ class GraphAnalytics:
         Returns:
             List of node IDs that have no incoming or outgoing edges
         """
-        orphaned = []
-        for node_id in self.graph.nodes():
-            if self.graph.degree(node_id) == 0:
-                orphaned.append(node_id)
-        return orphaned
+        return [nid for nid, deg in self.graph.degree() if deg == 0]
 
     def get_health_score(self) -> int:
         """

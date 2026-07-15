@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.6.1] - 2026-07-15
+
+### Fixed
+- **ChromaDB duplicate embeddings** — replaced `collection.add()` with `collection.upsert()` in `VectorStore.ingest_chunks()` and `VectorStore.ingest_ast_entities()`. Running `nervapack ingest .` multiple times no longer multiplies storage; re-ingesting a previously indexed project is now fully idempotent.
+- **Over-broad directory scan** — expanded `_SKIP_DIRS` in `ast_parser.py` to exclude common build/output directories (`dist`, `build`, `site`, `target`, `out`, `output`, `.tox`, `.mypy_cache`, `.pytest_cache`, `.ruff_cache`, `htmlcov`, `coverage`, `.next`, `.nuxt`, `.svelte-kit`, `.turbo`, `bin`, `.gradle`, `.idea`, `.vscode`, `.venv`, `env`) and any directory ending with `.egg-info` or `.dist-info`. This prevents NervaPack from ingesting generated artefacts, which was the primary cause of multi-GB graph sizes on typical Python/JS projects.
+
+### Upgrade Notes
+If you previously ran `nervapack ingest .` and saw unexpectedly large `.nervapack/chroma_db/` sizes, clear and re-ingest:
+```bash
+rm -rf .nervapack/chroma_db
+nervapack ingest .
+```
+
+---
+
 ## [0.6.0] - 2026-07-14
 
 ### Added

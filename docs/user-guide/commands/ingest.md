@@ -17,11 +17,20 @@ nervapack ingest [PATH] [OPTIONS]
 The `ingest` command scans your repository and builds the complete knowledge graph. This is typically run once per project, then updated with `sync`.
 
 **What it does:**
-1. Parses code files into AST entities (classes, functions, imports)
-2. Scans markdown documentation
-3. Embeds entities into ChromaDB vector store
-4. Uses LLM to bind docs to code (creates EXPLAINS edges)
-5. Saves graph to `.nervapack/graph.graphml`
+1. Walks the directory tree — automatically skips `dist/`, `build/`, `site/`, `node_modules/`, `venv/`, `.tox/`, `__pycache__/`, and dozens of other build/output directories, so generated artefacts are never ingested.
+2. Parses code files into AST entities (classes, functions, imports) using tree-sitter.
+3. Scans markdown documentation and chunks by header hierarchy.
+4. Embeds entities into ChromaDB vector store using `upsert` — re-ingesting the same project is fully idempotent and does not duplicate data.
+5. Uses LLM to bind docs to code (creates `EXPLAINS` edges). Falls back to free keyword-overlap matching when no `--llm` flag is given.
+6. Saves graph to `.nervapack/graph.graphml`.
+
+!!! tip "Exclude project-specific directories"
+    Create a `.nervapackignore` file (gitignore syntax) in your project root to skip additional directories:
+    ```
+    generated/
+    proto_out/
+    __snapshots__/
+    ```
 
 ---
 
@@ -101,3 +110,5 @@ Typical times for a Python project:
 
 - [`sync`](sync.md) — Update graph after code changes
 - [`status`](status.md) — Check graph health
+- [`clean`](clean.md) — Wipe data and start fresh if ingest went wrong
+- [`enrich`](enrich.md) — Add LLM semantic edges to an existing graph

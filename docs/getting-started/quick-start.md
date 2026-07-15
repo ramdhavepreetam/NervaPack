@@ -1,383 +1,279 @@
 # Quick Start
 
-Get NervaPack running in 5 minutes. This tutorial walks you through building your first knowledge graph and running your first query.
+Get NervaPack running in under 5 minutes.
 
 ---
 
-## Step 1: Install NervaPack
+## Step 1: Install
 
-If you haven't already, install NervaPack:
+```bash
+pip install nervapack
+```
 
-=== "Homebrew (macOS/Linux)"
-    ```bash
-    brew tap ramdhavepreetam/nervapack
-    brew install nervapack
-    ```
+For MCP integration with Claude Code or Cursor:
+```bash
+pip install "nervapack[mcp]"
+```
 
-=== "pipx (Recommended)"
-    ```bash
-    pipx install nervapack
-    ```
-
-=== "pip"
-    ```bash
-    pip install nervapack
-    ```
-
-Verify installation:
+Verify:
 ```bash
 nervapack --help
 ```
 
 ---
 
-## Step 2: Set Up LLM Provider
+## Step 2: (Optional) Set Up an LLM
 
-NervaPack needs an LLM to bind documentation to code. Choose one:
+NervaPack builds a structural graph with **zero LLM setup**. An LLM is only needed to add semantic doc-to-code edges (`EXPLAINS`). Skip this step if you just want to try it.
 
 === "Ollama (Privacy-First, Free)"
     ```bash
-    # Install Ollama
-    brew install ollama  # or download from ollama.com
-
-    # Pull a model
+    brew install ollama       # or download from ollama.com
     ollama pull llama3
-
-    # Start Ollama (in separate terminal)
-    ollama serve
+    ollama serve              # keep running in a separate terminal
     ```
 
-=== "Claude API (Cloud)"
+=== "Claude API"
     ```bash
-    # Get API key from https://console.anthropic.com
-    export ANTHROPIC_API_KEY=sk-ant-...
-
-    # Install Claude support
     pip install "nervapack[claude]"
+    export ANTHROPIC_API_KEY=sk-ant-...
     ```
 
-=== "OpenAI API (Cloud)"
+=== "OpenAI API"
     ```bash
-    # Get API key from https://platform.openai.com/api-keys
-    export OPENAI_API_KEY=sk-...
-
-    # Install OpenAI support
     pip install "nervapack[openai]"
+    export OPENAI_API_KEY=sk-...
     ```
 
-=== "MCP (Claude Code/Cursor)"
+=== "MCP / Claude Code"
     ```bash
-    # No setup needed!
-    # If using NervaPack through Claude Code, it auto-detects
+    # Zero setup — auto-detected when running inside Claude Code
     pip install "nervapack[mcp]"
     ```
 
-!!! tip "First time users"
-    We recommend **Ollama** for maximum privacy and zero recurring costs.
-
 ---
 
-## Step 3: Navigate to Your Project
+## Step 3: Ingest Your Project
 
 ```bash
 cd your-project/
+nervapack ingest .
 ```
 
-!!! warning "Git required"
-    Your project must be a git repository:
-    ```bash
-    # If not already a git repo:
-    git init
-    git add .
-    git commit -m "Initial commit"
-    ```
+**What this does (in order):**
 
----
-
-## Step 4: Build the Knowledge Graph
-
-Run the ingest command to build your graph:
-
-=== "With Ollama (Default)"
-    ```bash
-    nervapack ingest .
-    ```
-
-=== "With Claude API"
-    ```bash
-    nervapack ingest . --llm claude
-    ```
-
-=== "With OpenAI API"
-    ```bash
-    nervapack ingest . --llm openai
-    ```
-
-**What happens:**
-
-1. **Scans directory** for code files (`.py`, `.js`, `.ts`, etc.)
-2. **Parses AST** using tree-sitter (classes, functions, imports)
-3. **Scans markdown docs** (`.md` files)
-4. **Embeds entities** into ChromaDB vector store
-5. **Binds docs to code** using LLM (creates `EXPLAINS` edges)
-6. **Saves graph** to `.nervapack/graph.graphml`
+1. Walks the directory tree — skips `dist/`, `build/`, `node_modules/`, `venv/`, `site/`, `.tox/`, and dozens of other non-code directories automatically.
+2. Parses source files with tree-sitter → classes, functions, imports.
+3. Chunks all `.md` files by header.
+4. Embeds every entity into ChromaDB (local ONNX model, no cloud).
+5. If an LLM is available, binds doc chunks to code nodes (`EXPLAINS` edges).
+6. Saves the graph to `.nervapack/graph.graphml`.
 
 **Expected time:**
-- Small project (< 100 files): 1-2 minutes
-- Medium project (100-1000 files): 5-10 minutes
-- Large project (1000+ files): 15-30 minutes
 
-!!! tip "Progress tracking"
-    NervaPack shows real-time progress with rich console output.
+| Project size | Time |
+|---|---|
+| < 50 files | 15–30 seconds |
+| 50–500 files | 1–3 minutes |
+| 500–2000 files | 3–10 minutes |
+
+!!! tip "Re-ingest is safe"
+    NervaPack uses `upsert` throughout — running `ingest` twice does not duplicate data. If you see large `.nervapack/chroma_db/` sizes from an older version, run `nervapack clean --vectors` first.
+
+!!! tip "Exclude build directories"
+    Create a `.nervapackignore` file (gitignore syntax) for any project-specific directories to skip:
+    ```
+    generated/
+    proto_out/
+    __snapshots__/
+    ```
 
 ---
 
-## Step 5: Run Your First Query
-
-Ask NervaPack about your codebase:
+## Step 4: Run Your First Query
 
 ```bash
 nervapack query "How does authentication work?"
 ```
 
-**Output:**
+**What you get:**
+- A focused Markdown context block containing only the relevant classes, functions, and doc sections — ready to paste into an LLM prompt.
+- A token efficiency panel showing how many tokens NervaPack used vs. naive "dump the whole file" RAG.
 
 ```
 Query: "How does authentication work?"
 
+Query Router: Intent: semantic, Direction: both
 Vector Search: Found 3 seed nodes
-
-┌───────────────────────────────────────────────────────┐
-│ #  │ Node Type │ Name/File                            │
-├───────────────────────────────────────────────────────┤
-│ 1  │ function  │ authenticate_user                    │
-│ 2  │ class     │ AuthMiddleware                       │
-│ 3  │ markdown  │ Authentication Guide                 │
-└───────────────────────────────────────────────────────┘
-
-Graph Traversal: Expanding with max_hops=1
-
-  Seed nodes: 3
-  Expanded nodes: 7
-  Total retrieved: 10
-  Edges followed: 12
-  Traversal depth: 1
 
 Retrieved Context:
 ──────────────────────────────────────────────────────────
-
 # NervaPack Context Retrieval
-## File: src/auth/middleware.py
+## File: `src/auth/middleware.py`
 ### CLASS: AuthMiddleware (L15-L42)
-...
+```python
+class AuthMiddleware:
+    def authenticate(self, token: str) -> User:
+        ...
+```
 
-## File: docs/authentication.md
+## File: `docs/authentication.md`
 ### MARKDOWN: Authentication Guide
-...
-
+JWT tokens are issued on login and expire after 15 minutes...
 ──────────────────────────────────────────────────────────
 
 ╭──────────────  NervaPack Token Efficiency  ──────────────╮
-│  Strategy              Tokens   Visual            Relative │
-│  Naive RAG (3 files)   12,840   ████████████████  100%    │
-│  NervaPack              1,180   █░░░░░░░░░░░░░░░    9.2%  │
-│ ──────────────────────────────────────────────────────────│
-│  Tokens saved: 11,660   Reduction: 90.8%                  │
-│  Cost saved (GPT-4o  $2.50/1M): $0.0292 per query         │
-│  Cost saved (Claude Sonnet $3/1M): $0.0350 per query      │
+│  Strategy              Tokens   Reduction                 │
+│  Naive RAG (3 files)   12,840   100% (base)              │
+│  NervaPack              1,180     9.2%                    │
+│ ─────────────────────────────────────────────────────────│
+│  Tokens saved: 11,660   Reduction: 90.8%                 │
+│  Cost saved (GPT-4o $2.50/1M): $0.0292 per query         │
 ╰───────────────────────────────────────────────────────────╯
 ```
 
-**What happened:**
+### Impact analysis
 
-1. **Vector search** found 3 most relevant nodes
-2. **Graph traversal** expanded 1-hop to find related code
-3. **Context extracted** as focused Markdown
-4. **Token savings calculated** vs naive approach
+Find what would break if you change a function:
+```bash
+nervapack query "what breaks if I change AuthMiddleware"
+```
 
-!!! success "Copy-paste ready"
-    The context output is designed to be pasted directly into an LLM prompt!
+### Exact symbol lookup
+
+Jump directly to a named entity, bypassing vector search:
+```bash
+nervapack query "VectorStore"
+```
 
 ---
 
-## Step 6: Visualize the Graph
-
-See your knowledge graph in an interactive HTML visualization:
+## Step 5: Visualize the Graph
 
 ```bash
 nervapack visualize --enhanced --communities
 ```
 
-**Opens in browser:**
+Opens an interactive HTML file in your browser. Features:
+- Real-time search (filter nodes by typing)
+- Shortest path finder (click two nodes)
+- Community detection with Louvain colour coding
+- Drag, zoom, hover for code previews
 
-- **Node shapes:** Files (diamonds), Classes (dots), Functions (dots)
-- **Colors:** Community-detected modules (Louvain algorithm)
-- **Search box:** Real-time filtering
-- **Interactive:** Drag, zoom, click nodes for details
-- **Path finder:** Click two nodes to find shortest path
-
-**Saved to:** `.nervapack/graph.html`
-
-!!! tip "Share visualizations"
-    The HTML file is standalone—no external dependencies. Share it with your team!
+Saved to `.nervapack/graph.html` — standalone, no internet required, shareable.
 
 ---
 
-## Step 7: Check Graph Status
-
-See comprehensive analytics:
+## Step 6: Check Status
 
 ```bash
 nervapack status --detailed
 ```
 
-**Output:**
-
-```
-╭──────────────  NervaPack Status  ──────────────╮
-│ Graph Health Score: 34/100 ●●●○○○○○○○          │
-│                                                │
-│ 📊 Overview                                    │
-│   Nodes:      378                              │
-│   Edges:      353                              │
-│   Files:       25                              │
-│   Functions:  138                              │
-│   Classes:     20                              │
-│                                                │
-│ 📚 Language Distribution                       │
-│   Python      ████████████████ 100.0%  (25)   │
-│                                                │
-│ 📖 Documentation Coverage                      │
-│   ░░░░░░░░░░░░░░░░ 0.0% (0/158 entities)       │
-│                                                │
-│ 🔗 Most Connected Files                        │
-│   1. cli.py                    (75 edges)      │
-│   2. app.py                    (28 edges)      │
-│                                                │
-│ 🔄 Git Sync Status                             │
-│   ✓ Graph is in sync                           │
-╰────────────────────────────────────────────────╯
-```
+Shows health score (0–100), language distribution, documentation coverage, and most-connected files. Use this to decide whether to run `nervapack enrich .` to improve semantic coverage.
 
 ---
 
-## Step 8: Sync After Changes
+## Step 7: Sync After Changes
 
-After modifying files, update your graph incrementally:
-
+After modifying files:
 ```bash
-# Make some changes to your code
-vim src/auth/middleware.py
-
-# Sync only changed files (fast!)
 nervapack sync .
 ```
 
-**Output:**
-
-```
-Syncing changed files with NervaPack graph...
-Found 1 changed files.
-Updated AST for auth/middleware.py
-Sync complete.
-```
-
-!!! tip "Incremental updates"
-    `sync` only re-indexes changed files—much faster than re-running `ingest`!
+Only re-parses and re-embeds the changed files. Typically 2–5 seconds regardless of project size.
 
 ---
 
-## Common Workflows
+## Step 8: Use with Claude Code (MCP)
 
-### Daily Development
+Create `.mcp.json` in your project root:
+
+```json
+{
+  "mcpServers": {
+    "nervapack": {
+      "command": "nervapack-mcp",
+      "description": "NervaPack knowledge graph (v0.6.1)"
+    },
+    "nervapack-memory": {
+      "command": "nervapack-memory-mcp",
+      "description": "NervaPack agent memory (v0.6.1)"
+    }
+  }
+}
+```
+
+Add to your `CLAUDE.md`:
+
+```markdown
+## NervaPack session protocol
+At the start of every session:
+1. Call `memory_start_session("<task name>")`.
+2. Call `memory_recall("project context", budget_tokens=400)`.
+3. Call `query("<topic>")` before answering any code question.
+
+During the session: call `memory_store` for decisions, facts, and procedures.
+At session end: call `memory_end_session("<summary>")`.
+```
+
+Reload Claude Code — NervaPack tools appear automatically.
+
+---
+
+## If Something Goes Wrong
+
+### Graph is wrong or too large
 ```bash
-# Morning: Check if graph is up to date
+nervapack clean --all    # wipes vectors + graph (keeps memory)
+nervapack ingest .
+```
+
+### Duplicate vectors from multiple ingests (older versions)
+```bash
+nervapack clean --vectors
+nervapack ingest .
+```
+
+### `doctor` for full diagnostics
+```bash
+nervapack doctor
+```
+
+Checks Python version, tree-sitter grammars, embedding backend, Ollama connectivity, and MCP config.
+
+### "Not a git repository" error on `sync`
+```bash
+git init && git add . && git commit -m "init"
+nervapack sync .
+```
+
+---
+
+## Daily Workflow
+
+```bash
+# Morning: check graph is current
 nervapack status
 
-# Sync if needed
+# Sync if files changed
 nervapack sync .
 
-# Query as you code
+# Query while coding
 nervapack query "How does the caching layer work?"
-```
 
-### Code Review
-```bash
-# Explore a specific module
+# Before a review: explore changed module
 nervapack explore src/auth/ --hops 2
 
-# Check dependencies
-nervapack dependencies src/auth/middleware.py
-
-# Visualize for the reviewer
-nervapack visualize --enhanced --communities
-```
-
-### Documentation
-```bash
-# Query for context
-nervapack query "authentication flow" > context.md
-
-# Use context to write docs with LLM assistance
+# End of sprint: check hotspots
+nervapack hotspots --since "2 weeks ago"
 ```
 
 ---
 
 ## Next Steps
 
-You've successfully built your first knowledge graph! Here's what to explore next:
-
-<div class="grid" markdown>
-
-**[LLM Provider Setup](llm-providers.md)**
-Learn about all provider options (Ollama, Claude, OpenAI, MCP)
-
-**[Command Reference](../user-guide/commands/ingest.md)**
-Detailed docs for all 10 CLI commands
-
-**[MCP Server Integration](../integrations/mcp-server.md)**
-Use NervaPack directly in Claude Code/Cursor
-
-**[Python SDK](../integrations/python-sdk.md)**
-Build custom tools with the NervaPack API
-
-</div>
-
----
-
-## Troubleshooting Quick Start
-
-### "Ollama not running" error
-```bash
-# Make sure Ollama is running
-ollama serve
-
-# In another terminal, verify:
-ollama list
-```
-
-### "Not a git repository" error
-```bash
-# Initialize git in your project
-git init
-git add .
-git commit -m "Initial commit"
-```
-
-### "No relevant nodes found" after query
-- **Graph might be empty.** Check: `nervapack status`
-- **Query might be too specific.** Try broader terms.
-- **Re-run ingest** if you recently added docs.
-
-### Graph out of sync
-```bash
-# Full rebuild (if sync doesn't work)
-rm -rf .nervapack/
-nervapack ingest .
-```
-
----
-
-**You're all set!** 🎉
-
-NervaPack is now integrated into your development workflow. Happy querying!
+- [Command Reference](../user-guide/commands/ingest.md) — detailed docs for every command
+- [MCP Server](../integrations/mcp-server.md) — wire NervaPack into Claude Code / Cursor
+- [Agent Memory](../memory/index.md) — cross-session memory for AI agents
+- [Benchmarks](../BENCHMARKS.md) — verified performance numbers

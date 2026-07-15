@@ -26,7 +26,7 @@ class VectorStore:
             metadatas.append({"header": chunk["header"], "file_path": chunk["file_path"], "type": "markdown"})
             ids.append(f"md_{chunk['file_path']}_{i}")
 
-        self.collection.add(
+        self.collection.upsert(
             documents=documents,
             metadatas=metadatas,
             ids=ids
@@ -49,7 +49,7 @@ class VectorStore:
             metadatas.append({"node_id": entity["node_id"], "type": "ast", "file_path": entity.get("file_path", "")})
             ids.append(entity["node_id"])
 
-        self.collection.add(
+        self.collection.upsert(
             documents=documents,
             metadatas=metadatas,
             ids=ids

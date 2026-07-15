@@ -140,6 +140,7 @@ nav:
       - query: user-guide/commands/query.md
       - enrich: user-guide/commands/enrich.md
       - doctor: user-guide/commands/doctor.md
+      - clean: user-guide/commands/clean.md
       - visualize: user-guide/commands/visualize.md
       - sync: user-guide/commands/sync.md
       - status: user-guide/commands/status.md
