@@ -1,11 +1,138 @@
 import os
+import re
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Set
 
 from tree_sitter import Language, Parser, Node
 
 from nervapack.parser.language_registry import LANGUAGE_REGISTRY, LanguageConfig
+
+
+# ---------------------------------------------------------------------------
+# Intelligent vendor detection helpers
+# ---------------------------------------------------------------------------
+
+def _build_installed_package_names() -> Set[str]:
+    """
+    Return the union of all top-level import names and dist-info directory
+    names from the current Python environment.  Used to auto-skip directories
+    whose name matches a known installed package (Option 2).
+    """
+    names: Set[str] = set()
+    try:
+        import importlib.metadata as meta
+        for dist in meta.distributions():
+            # Canonical name: lowercase, dashes → underscores
+            raw = dist.metadata.get("Name", "")
+            if raw:
+                norm = raw.lower().replace("-", "_")
+                names.add(norm)
+                names.add(raw.lower())
+            # top_level.txt lists the actual importable package dirs
+            tl = dist.read_text("top_level.txt")
+            if tl:
+                for line in tl.splitlines():
+                    t = line.strip().lower()
+                    if t:
+                        names.add(t)
+    except Exception:
+        pass
+    return names
+
+
+# Lazy singleton — computed once per process.
+_INSTALLED_PACKAGE_NAMES: Set[str] | None = None
+
+
+def _is_installed_package_dir(name: str) -> bool:
+    global _INSTALLED_PACKAGE_NAMES
+    if _INSTALLED_PACKAGE_NAMES is None:
+        _INSTALLED_PACKAGE_NAMES = _build_installed_package_names()
+    norm = name.lower().replace("-", "_")
+    return norm in _INSTALLED_PACKAGE_NAMES or name.lower() in _INSTALLED_PACKAGE_NAMES
+
+
+# Nested-package manifests — presence in a *non-root* dir signals a bundled library.
+_EMBEDDED_PACKAGE_SIGNALS = {"package.json", "pyproject.toml", "setup.py", "setup.cfg"}
+
+# Minification signals: if a directory's JS/TS files are almost all on a single
+# (very long) line, it is almost certainly a vendored minified bundle.
+_MINIFIED_EXTENSIONS = {".js", ".ts", ".cjs", ".mjs"}
+_MINIFIED_LINE_RATIO = 0.95   # 95% of lines are very long (>500 chars)
+_MINIFIED_LONG_LINE  = 500    # chars
+_MINIFIED_MIN_FILES  = 3      # only check dirs with at least this many JS/TS files
+
+
+def _has_embedded_manifest(dir_path: str) -> bool:
+    """True if dir_path contains a manifest file indicating it is its own package."""
+    for signal in _EMBEDDED_PACKAGE_SIGNALS:
+        if os.path.isfile(os.path.join(dir_path, signal)):
+            return True
+    return False
+
+
+def _looks_minified(dir_path: str) -> bool:
+    """
+    True if the directory appears to be a minified JS/TS bundle.
+    Samples the first 10 JS/TS files and counts how many have a suspiciously
+    high ratio of very-long lines.
+    """
+    js_files = []
+    try:
+        for entry in os.scandir(dir_path):
+            if entry.is_file() and Path(entry.name).suffix in _MINIFIED_EXTENSIONS:
+                js_files.append(entry.path)
+                if len(js_files) >= 10:
+                    break
+    except OSError:
+        return False
+
+    if len(js_files) < _MINIFIED_MIN_FILES:
+        return False
+
+    long_line_files = 0
+    for fp in js_files:
+        try:
+            with open(fp, "r", encoding="utf-8", errors="ignore") as fh:
+                lines = fh.readlines()
+            if not lines:
+                continue
+            long = sum(1 for l in lines if len(l) > _MINIFIED_LONG_LINE)
+            if long / len(lines) >= _MINIFIED_LINE_RATIO:
+                long_line_files += 1
+        except OSError:
+            pass
+
+    return long_line_files / len(js_files) >= _MINIFIED_LINE_RATIO
+
+
+# Cache to avoid re-checking the same absolute dir path multiple times.
+_vendor_cache: Dict[str, bool] = {}
+
+
+def _is_vendor_dir(dir_path: str, name: str) -> bool:
+    """
+    Returns True if dir_path should be treated as vendor/third-party code.
+    Combines:
+      - pip cross-reference (Option 2): dir name matches an installed package
+      - embedded manifest check (Option 3a): contains package.json / pyproject.toml
+      - minification heuristic (Option 3b): nearly all JS/TS files are minified
+
+    This is always called on a *subdirectory* of the scan root, never the
+    root itself, so every signal is safe to apply without a root-exclusion guard.
+    """
+    if dir_path in _vendor_cache:
+        return _vendor_cache[dir_path]
+
+    result = (
+        _is_installed_package_dir(name)
+        or _has_embedded_manifest(dir_path)
+        or _looks_minified(dir_path)
+    )
+
+    _vendor_cache[dir_path] = result
+    return result
 
 
 @dataclass
@@ -178,12 +305,14 @@ def scan_directory(directory: str, parser: ASTParser | None = None) -> List[Pars
     abs_root = str(Path(directory).resolve())
 
     for root, dirs, files in os.walk(directory):
-        # Skip hardcoded dirs and .nervapackignore dir patterns
+        # Skip hardcoded dirs and .nervapackignore dir patterns;
+        # also skip auto-detected vendor/pip directories.
         dirs[:] = [
             d for d in dirs
             if d not in _SKIP_DIRS
             and not d.endswith((".egg-info", ".dist-info"))
             and not _is_ignored(os.path.join(root, d), abs_root, ignore_patterns)
+            and not _is_vendor_dir(os.path.join(root, d), d)
         ]
         for file in files:
             # Skip unsupported extensions and minified bundles

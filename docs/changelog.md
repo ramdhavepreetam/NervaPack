@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.6.4] - 2026-07-15
+
+### Added
+- **Intelligent vendor detection** — `scan_directory()` and `scan_markdown_directory()` now auto-detect and skip third-party/vendored directories using two complementary strategies:
+  - **pip cross-reference**: directory names (normalised to lowercase + underscores) are matched against all installed Python packages (`importlib.metadata.distributions()`). If a directory matches a known package, it is skipped automatically — no manual `_SKIP_DIRS` entries required.
+  - **Heuristic signals**: directories containing a `package.json`, `pyproject.toml`, `setup.py`, or `setup.cfg` (embedded package manifests) are treated as self-contained libraries and skipped. Directories where ≥95% of JS/TS files have lines longer than 500 characters are identified as minified bundles and also skipped.
+- **Vendor detection cache** — detection results are cached per process so each directory is inspected at most once even in large projects.
+
+### Notes
+- `rusted-host` no longer needs to be hardcoded in `_SKIP_DIRS` (it is still there as a fallback for users on older versions), but any pip-installed package whose source lives inside the project tree will now be auto-skipped.
+
+---
+
 ## [0.6.3] - 2026-07-15
 
 ### Fixed

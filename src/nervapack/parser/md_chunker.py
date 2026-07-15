@@ -89,6 +89,7 @@ _MD_SKIP_DIRS = {
 
 def scan_markdown_directory(directory: str) -> List[Dict[str, str]]:
     import os
+    from nervapack.parser.ast_parser import _is_vendor_dir
     chunker = MarkdownChunker()
     all_chunks = []
     for root, dirs, files in os.walk(directory):
@@ -96,6 +97,7 @@ def scan_markdown_directory(directory: str) -> List[Dict[str, str]]:
             d for d in dirs
             if d not in _MD_SKIP_DIRS
             and not d.endswith((".egg-info", ".dist-info"))
+            and not _is_vendor_dir(os.path.join(root, d), d)
         ]
         for file in files:
             if file.endswith(".md"):
