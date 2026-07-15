@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.6.5] - 2026-07-15
+
+### Fixed
+- **`visualize` broken in browser — "TomSelect is not defined"** — root cause was `select_menu=True, filter_menu=True` in pyvis, which injects `<script src="lib/tom-select/...">` and `<script src="lib/bindings/utils.js">` as relative paths. Those paths only exist inside the pyvis package directory, not next to the output HTML, so the browser 404s and TomSelect fails to load. Fixed by setting both flags to `False`.
+- **Orphaned `lib/bindings/utils.js` reference** — pyvis emits this tag unconditionally even when `select_menu=False`. Stripped via post-processing regex after `save_graph()`.
+- **Commented-out `node_modules/vis` block** — pyvis template includes a dead HTML comment referencing `../node_modules/vis/dist/vis.js` which triggers CSP noise in some browsers. Stripped in post-processing.
+
+### Added
+- **End-to-end visualize test suite** (`tests/test_visualize_e2e.py`) — 10 tests that build a real graph, call `export_html()`, and validate: no broken relative paths, no TomSelect, vis-network loaded via absolute URL, all node types and edges rendered, legend injected, empty graph safe, long labels truncated, valid HTML structure.
+
+---
+
 ## [0.6.4] - 2026-07-15
 
 ### Added

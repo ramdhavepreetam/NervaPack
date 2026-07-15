@@ -70,8 +70,12 @@ def export_html(graph: nx.DiGraph, output_path: str) -> None:
         directed=True,
         bgcolor="#0f0f1a",
         font_color="#e0e0e0",
-        select_menu=True,
-        filter_menu=True,
+        # select_menu / filter_menu are intentionally OFF — they cause pyvis to
+        # inject <script src="lib/tom-select/..."> and <script src="lib/bindings/utils.js">
+        # which are relative paths that don't exist next to the output HTML file,
+        # producing "TomSelect is not defined" and 404s in the browser.
+        select_menu=False,
+        filter_menu=False,
     )
 
     net.set_options(json.dumps({
@@ -150,10 +154,27 @@ def export_html(graph: nx.DiGraph, output_path: str) -> None:
 </div>
 """
 
-    # Save and inject legend
+    # Save, clean up pyvis artefacts, and inject legend
     net.save_graph(output_path)
     with open(output_path, "r", encoding="utf-8") as f:
         html = f.read()
+
+    import re as _re
+
+    # pyvis always emits <script src="lib/bindings/utils.js"> even when
+    # select_menu=False — this is a relative path that 404s when the HTML is
+    # opened from any location other than the pyvis package directory.
+    html = _re.sub(r'<script\s+src=["\']lib/bindings/utils\.js["\']>\s*</script>', '', html)
+
+    # pyvis template also contains a commented-out node_modules vis block;
+    # strip it to avoid confusion and CSP noise.
+    html = _re.sub(
+        r'<!--\s*<link[^>]*node_modules[^>]*>.*?<script[^>]*node_modules[^>]*>.*?</script>\s*-->',
+        '',
+        html,
+        flags=_re.DOTALL,
+    )
+
     html = html.replace("</body>", legend_html + "\n</body>")
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(html)
