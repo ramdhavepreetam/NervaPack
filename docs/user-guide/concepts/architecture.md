@@ -31,9 +31,14 @@ graph TD
 - **ASTParser** — Uses tree-sitter to parse code files
 - **MarkdownChunker** — Splits markdown by headers
 - **LanguageRegistry** — Maps file extensions to parsers
+- **Vendor detector** — Auto-identifies and skips third-party/vendored directories
 
 **Flow:**
 ```
+Directory walk
+    ↓
+Vendor detection (pip cross-ref + heuristics) → skip if vendor
+    ↓
 .py/.js/.ts file
     ↓
 tree-sitter grammar
@@ -43,9 +48,22 @@ AST nodes (class, function, import)
 ParsedEntity objects
 ```
 
+**Vendor detection (v0.6.4+):**
+
+NervaPack automatically skips directories that are third-party libraries, even if they live inside your project tree. Two strategies run before `os.walk()` descends into each subdirectory:
+
+1. **pip cross-reference** — directory names are normalised (lowercase, `-` → `_`) and matched against all packages reported by `importlib.metadata.distributions()`. If a directory matches a known installed package, it is skipped. This handles cases like `pyvis/`, `chromadb/`, or `requests/` being copied into the project tree.
+
+2. **Heuristic signals** — a directory is skipped if it:
+   - Contains `package.json`, `pyproject.toml`, `setup.py`, or `setup.cfg` (embedded package manifest), or
+   - Has ≥95% of its JS/TS files with lines longer than 500 characters (minified bundle).
+
+Detection results are cached per process so each directory is inspected at most once, regardless of project depth.
+
 **Key classes:**
 - `ParsedEntity` — Data class for AST nodes
 - `LanguageConfig` — Configuration for each language
+- `_is_vendor_dir(dir_path, name)` — combined vendor detection entry point
 
 ---
 
@@ -295,6 +313,11 @@ project-root/
 - ChromaDB is local-only
 - Graph visualization is standalone HTML
 
+### 6. Zero-Config Vendor Exclusion
+- Installed Python packages are auto-detected via `importlib.metadata` — no `_SKIP_DIRS` maintenance required
+- Embedded package manifests and minified JS/TS bundles are caught by heuristics
+- Users only need `.nervapackignore` for project-specific generated directories (proto stubs, snapshot files, etc.)
+
 ---
 
 ## Performance Characteristics
@@ -311,9 +334,10 @@ project-root/
 - **Visualizations:** O(n + e) per HTML file
 
 ### Typical Performance (500-file Python project)
-- **Ingest:** 5-10 minutes (with Ollama)
+- **Ingest (cold):** 1-4 minutes (ONNX embeddings, no LLM)
+- **Ingest (warm):** < 1 second (unchanged files skipped via content hash)
 - **Sync:** 5-15 seconds (5 changed files)
-- **Query:** <1 second
+- **Query:** < 1 second
 - **Visualize:** 2-5 seconds
 
 ---
