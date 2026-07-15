@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.6.3] - 2026-07-15
+
+### Fixed
+- **Vendored/bundled libraries scanned as user code** — added `vendor`, `vendors`, `lib`, `libs`, `third_party`, `extern`, `_vendor`, `rusted-host`, `site-packages` to `_SKIP_DIRS` in both `ast_parser` and `md_chunker`. Projects with pip packages or JS libraries living inside the repo tree (e.g. `rusted-host/pyvis/`) no longer produce hundreds of thousands of spurious entities.
+- **Minified JS/TS files parsed** — added `_SKIP_SUFFIXES` check; `.min.js`, `.min.ts`, `.min.cjs`, `.bundle.js`, `.bundle.ts` are now skipped entirely.
+- **Duplicate vector IDs from minified files** — added a 500-entity-per-file cap; files generating more than 500 entities are silently skipped (they are minified bundles, not readable source).
+
+### Upgrade Notes
+If you previously ingested a project and got unexpectedly large entity counts, clean and re-ingest:
+```bash
+nervapack clean --all
+nervapack ingest .
+```
+
+---
+
 ## [0.6.2] - 2026-07-15
 
 ### Performance

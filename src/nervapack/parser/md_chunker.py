@@ -81,6 +81,9 @@ _MD_SKIP_DIRS = {
     ".next", ".nuxt", ".svelte-kit", ".turbo",
     "bin", ".gradle",
     ".idea", ".vscode",
+    "vendor", "vendors", "third_party", "extern", "_vendor",
+    "lib", "libs",
+    "rusted-host", "site-packages",
 }
 
 

@@ -119,7 +119,15 @@ _SKIP_DIRS = {
     "bin", ".gradle",
     # IDEs
     ".idea", ".vscode",
+    # vendored / bundled third-party code (never user source)
+    "vendor", "vendors", "third_party", "extern", "_vendor",
+    "lib", "libs",
+    # pip-installed packages that land inside the project tree
+    "rusted-host", "site-packages",
 }
+
+# File suffixes that are never worth parsing (minified bundles, lock files)
+_SKIP_SUFFIXES = {".min.js", ".min.ts", ".min.cjs", ".bundle.js", ".bundle.ts"}
 
 
 def _load_ignore_patterns(directory: str) -> List[str]:
@@ -178,13 +186,22 @@ def scan_directory(directory: str, parser: ASTParser | None = None) -> List[Pars
             and not _is_ignored(os.path.join(root, d), abs_root, ignore_patterns)
         ]
         for file in files:
-            if Path(file).suffix not in _SUPPORTED_EXTENSIONS:
+            # Skip unsupported extensions and minified bundles
+            p = Path(file)
+            if p.suffix not in _SUPPORTED_EXTENSIONS:
+                continue
+            if any(file.endswith(s) for s in _SKIP_SUFFIXES):
                 continue
             file_path = os.path.join(root, file)
             if _is_ignored(file_path, abs_root, ignore_patterns):
                 continue
             try:
-                all_entities.extend(parser.parse_file(file_path))
+                file_entities = parser.parse_file(file_path)
+                # Guard against minified files that slip through (e.g. renamed
+                # without .min suffix): cap at 500 entities per file.
+                if len(file_entities) > 500:
+                    continue
+                all_entities.extend(file_entities)
             except ImportError:
                 pass
     return all_entities
