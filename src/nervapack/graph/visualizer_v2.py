@@ -239,8 +239,16 @@ def export_html_enhanced(
     net.save_graph(output_path)
 
     # Enhance HTML with custom controls
+    import re as _re
     with open(output_path, "r", encoding="utf-8") as f:
         html = f.read()
+
+    # Strip pyvis relative-path artefacts that 404 in the browser
+    html = _re.sub(r'<script\s+src=["\']lib/bindings/utils\.js["\']>\s*</script>', '', html)
+    html = _re.sub(
+        r'<!--\s*<link[^>]*node_modules[^>]*>.*?<script[^>]*node_modules[^>]*>.*?</script>\s*-->',
+        '', html, flags=_re.DOTALL,
+    )
 
     # Build enhanced UI
     enhanced_ui = _build_enhanced_ui(
@@ -300,7 +308,7 @@ def _build_enhanced_ui(enable_search: bool, enable_community: bool, num_communit
     background:#1a1a2e; border:1px solid #444; border-radius:4px;
     padding:6px 10px; color:#e0e0e0; font-size:12px; width:200px;"
     onkeyup="searchNodes(event)">
-  <button onclick="clearSearch()" style="
+  <button onclick="npClearSearch()" style="
     background:#333366; border:none; border-radius:4px;
     padding:6px 12px; color:#e0e0e0; font-size:12px; margin-left:4px;
     cursor:pointer;">Clear</button>
@@ -308,83 +316,71 @@ def _build_enhanced_ui(enable_search: bool, enable_community: bool, num_communit
 </div>
 
 <script>
-// network variable is already declared by pyvis above
+// Search uses the same npOriginalNodeState snapshot as the path finder.
+// We snapshot on first search so we always restore to unmodified sizes/colors.
+var npSearchSnapshotTaken = false;
 
 function searchNodes(event) {
-  const searchTerm = document.getElementById('search-input').value.toLowerCase();
-  const resultsDiv = document.getElementById('search-results');
+  var searchTerm = document.getElementById('search-input').value.toLowerCase();
+  var resultsDiv = document.getElementById('search-results');
 
   if (!searchTerm) {
-    clearSearch();
+    npClearSearch();
     return;
   }
 
-  // Get all nodes
-  const allNodes = network.body.data.nodes.get();
-  const matchingNodes = allNodes.filter(node => {
-    const label = (node.label || '').toLowerCase();
-    const type = (node.type || '').toLowerCase();
-    return label.includes(searchTerm) || type.includes(searchTerm);
-  });
+  // Snapshot original state once (before any modification)
+  if (!npSearchSnapshotTaken && Object.keys(npOriginalNodeState).length === 0) {
+    npSnapshot();
+    npSearchSnapshotTaken = true;
+  }
 
-  resultsDiv.innerHTML = `Found ${matchingNodes.length} nodes`;
-
-  // Highlight matching nodes
-  const allNodeIds = allNodes.map(n => n.id);
-  const matchingIds = matchingNodes.map(n => n.id);
-
-  // Update node visibility/opacity
-  const updates = allNodes.map(node => {
-    if (matchingIds.includes(node.id)) {
-      return {
-        id: node.id,
-        opacity: 1.0,
-        size: node.size * 1.5,  // Enlarge matching nodes
-      };
-    } else {
-      return {
-        id: node.id,
-        opacity: 0.2,  // Dim non-matching nodes
-      };
+  var allNodes = network.body.data.nodes.get();
+  var matchingIds = [];
+  allNodes.forEach(function(node) {
+    var label = (node.label || '').toLowerCase();
+    var type  = (node.type  || '').toLowerCase();
+    if (label.includes(searchTerm) || type.includes(searchTerm)) {
+      matchingIds.push(node.id);
     }
   });
 
+  resultsDiv.innerHTML = 'Found ' + matchingIds.length + ' node(s)';
+
+  var updates = allNodes.map(function(node) {
+    var isMatch = matchingIds.indexOf(node.id) !== -1;
+    var origSize = npOriginalNodeState[node.id] ? npOriginalNodeState[node.id].size : node.size;
+    return {
+      id: node.id,
+      opacity: isMatch ? 1.0 : 0.15,
+      size: isMatch ? origSize * 1.5 : origSize
+    };
+  });
   network.body.data.nodes.update(updates);
 
-  // Focus on first match if any
   if (matchingIds.length > 0) {
-    network.focus(matchingIds[0], {
-      scale: 1.5,
-      animation: true
-    });
+    network.focus(matchingIds[0], { scale: 1.5, animation: true });
   }
 }
 
-function clearSearch() {
+function npClearSearch() {
   document.getElementById('search-input').value = '';
   document.getElementById('search-results').innerHTML = '';
-
-  // Reset all nodes to normal
-  const allNodes = network.body.data.nodes.get();
-  const updates = allNodes.map(node => ({
-    id: node.id,
-    opacity: 1.0,
-    size: node.size || 10,
-  }));
-  network.body.data.nodes.update(updates);
-
-  network.fit();
-}
-
-// Capture network instance when vis.js creates it
-document.addEventListener('DOMContentLoaded', function() {
-  // Wait for network to be created
-  setTimeout(function() {
-    if (typeof network !== 'undefined') {
-      console.log('NervaPack enhanced search ready');
+  npSearchSnapshotTaken = false;
+  // Only restore if path finder hasn't taken over the state
+  if (!npPathActive) {
+    if (Object.keys(npOriginalNodeState).length > 0) {
+      npRestore();
+    } else {
+      // Fallback: just reset opacity without size changes
+      var updates = network.body.data.nodes.get().map(function(n) {
+        return { id: n.id, opacity: 1.0 };
+      });
+      network.body.data.nodes.update(updates);
+      network.fit();
     }
-  }, 1000);
-});
+  }
+}
 </script>
 """
         components.append(search_html)
@@ -396,20 +392,20 @@ document.addEventListener('DOMContentLoaded', function() {
     position:fixed; bottom:12px; left:12px; z-index:9999;
     background:rgba(15,15,26,0.92); border:1px solid #333366;
     border-radius:8px; padding:12px; font-family:monospace; max-width:400px;">
-  <div style="font-weight:bold; margin-bottom:8px; color:#8888ff;">🔍 Path Finder</div>
+  <div style="font-weight:bold; margin-bottom:8px; color:#8888ff;">Path Finder</div>
   <div style="margin-bottom:8px;">
-    <input type="text" id="path-source" placeholder="Click node or type ID..." style="
+    <input type="text" id="path-source" placeholder="Click a node (source)..." style="
       background:#1a1a2e; border:1px solid #444; border-radius:4px;
       padding:4px 8px; color:#e0e0e0; font-size:11px; width:100%; margin-bottom:4px;">
-    <input type="text" id="path-target" placeholder="Click another node..." style="
+    <input type="text" id="path-target" placeholder="Click a node (target)..." style="
       background:#1a1a2e; border:1px solid #444; border-radius:4px;
       padding:4px 8px; color:#e0e0e0; font-size:11px; width:100%;">
   </div>
-  <button onclick="findPath()" style="
+  <button onclick="npFindPath()" style="
     background:#4ECDC4; border:none; border-radius:4px;
     padding:6px 12px; color:#0f0f1a; font-size:12px; font-weight:bold;
     cursor:pointer; width:100%;">Find Path</button>
-  <button onclick="clearPath()" style="
+  <button onclick="npClearPath()" style="
     background:#333366; border:none; border-radius:4px;
     padding:4px 8px; color:#e0e0e0; font-size:11px; margin-top:4px;
     cursor:pointer; width:100%;">Clear Path</button>
@@ -417,185 +413,187 @@ document.addEventListener('DOMContentLoaded', function() {
 </div>
 
 <script>
-let originalNodeColors = {};
-let originalEdgeColors = {};
+// Global state for path finder and search
+// Keyed by node id, stores {color, size} before any highlighting
+var npOriginalNodeState = {};
+var npOriginalEdgeColors = {};
+var npPathActive = false;
+var npSearchActive = false;
+var npClickMode = 'path';  // always filling path source/target on click
 
-// Wait for network to be initialized before attaching handlers
-function initPathFinder() {
-  if (typeof network === 'undefined' || !network) {
-    setTimeout(initPathFinder, 100);
-    return;
-  }
-
-  // Click handler to select nodes for path finding
-  network.on("click", function(params) {
-  if (params.nodes.length > 0) {
-    const nodeId = params.nodes[0];
-    const sourceInput = document.getElementById('path-source');
-    const targetInput = document.getElementById('path-target');
-
-    if (!sourceInput.value) {
-      sourceInput.value = nodeId;
-      sourceInput.style.borderColor = '#4ECDC4';
-    } else if (!targetInput.value) {
-      targetInput.value = nodeId;
-      targetInput.style.borderColor = '#4ECDC4';
-    } else {
-      // Both filled, replace target
-      targetInput.value = nodeId;
-    }
-  }
-});
-
-function findPath() {
-  const sourceId = document.getElementById('path-source').value;
-  const targetId = document.getElementById('path-target').value;
-  const resultsDiv = document.getElementById('path-results');
-
-  if (!sourceId || !targetId) {
-    resultsDiv.innerHTML = '<span style="color:#FF6B6B;">Please select both source and target nodes</span>';
-    return;
-  }
-
-  // Simple BFS to find shortest path
-  const path = findShortestPath(sourceId, targetId);
-
-  if (!path) {
-    resultsDiv.innerHTML = '<span style="color:#FF6B6B;">No path found between nodes</span>';
-    return;
-  }
-
-  // Highlight the path
-  highlightPath(path);
-
-  resultsDiv.innerHTML = `
-    <span style="color:#4ECDC4;">✓ Path found!</span><br>
-    <span style="color:#888;">Length: ${path.length - 1} edges</span><br>
-    <span style="color:#888;">Nodes: ${path.length}</span>
-  `;
+// Snapshot current node/edge appearance before modifying
+function npSnapshot() {
+  npOriginalNodeState = {};
+  npOriginalEdgeColors = {};
+  network.body.data.nodes.get().forEach(function(node) {
+    npOriginalNodeState[node.id] = { color: node.color, size: node.size };
+  });
+  network.body.data.edges.get().forEach(function(edge) {
+    npOriginalEdgeColors[edge.id] = edge.color;
+  });
 }
 
-function findShortestPath(sourceId, targetId) {
-  const edges = network.body.data.edges.get();
+// Restore every node/edge to the snapshot state and fit view
+function npRestore() {
+  var nodeUpdates = network.body.data.nodes.get().map(function(node) {
+    var orig = npOriginalNodeState[node.id];
+    return {
+      id: node.id,
+      opacity: 1.0,
+      size: orig ? orig.size : node.size,
+      color: orig ? orig.color : node.color
+    };
+  });
+  var edgeUpdates = network.body.data.edges.get().map(function(edge) {
+    return {
+      id: edge.id,
+      color: npOriginalEdgeColors[edge.id] || edge.color,
+      width: 1,
+      opacity: 1.0
+    };
+  });
+  network.body.data.nodes.update(nodeUpdates);
+  network.body.data.edges.update(edgeUpdates);
+  network.fit();
+}
 
-  // Build adjacency list
-  const graph = {};
-  edges.forEach(edge => {
-    if (!graph[edge.from]) graph[edge.from] = [];
-    graph[edge.from].push(edge.to);
-    // For undirected search, uncomment:
-    // if (!graph[edge.to]) graph[edge.to] = [];
-    // graph[edge.to].push(edge.from);
+// ---- Path Finder ----
+
+function npFindPath() {
+  var sourceId = document.getElementById('path-source').value.trim();
+  var targetId = document.getElementById('path-target').value.trim();
+  var resultsDiv = document.getElementById('path-results');
+
+  if (!sourceId || !targetId) {
+    resultsDiv.innerHTML = '<span style="color:#FF6B6B;">Select both source and target nodes first</span>';
+    return;
+  }
+
+  var path = npBFS(sourceId, targetId);
+
+  if (!path) {
+    resultsDiv.innerHTML = '<span style="color:#FF6B6B;">No path found between these nodes</span>';
+    return;
+  }
+
+  npSnapshot();
+  npPathActive = true;
+  npHighlightPath(path);
+
+  resultsDiv.innerHTML =
+    '<span style="color:#4ECDC4;">Path found!</span><br>' +
+    '<span style="color:#888;">Edges: ' + (path.length - 1) + ' &nbsp; Nodes: ' + path.length + '</span>';
+}
+
+function npBFS(sourceId, targetId) {
+  var edges = network.body.data.edges.get();
+  var adj = {};
+  edges.forEach(function(edge) {
+    if (!adj[edge.from]) adj[edge.from] = [];
+    adj[edge.from].push(edge.to);
+    // also traverse backwards so path finder works in both directions
+    if (!adj[edge.to]) adj[edge.to] = [];
+    adj[edge.to].push(edge.from);
   });
 
-  // BFS
-  const queue = [[sourceId]];
-  const visited = new Set([sourceId]);
+  var queue = [[sourceId]];
+  var visited = {};
+  visited[sourceId] = true;
 
   while (queue.length > 0) {
-    const path = queue.shift();
-    const node = path[path.length - 1];
-
-    if (node === targetId) {
-      return path;
-    }
-
-    const neighbors = graph[node] || [];
-    for (const neighbor of neighbors) {
-      if (!visited.has(neighbor)) {
-        visited.add(neighbor);
-        queue.push([...path, neighbor]);
+    var current = queue.shift();
+    var node = current[current.length - 1];
+    if (node === targetId) return current;
+    var neighbors = adj[node] || [];
+    for (var i = 0; i < neighbors.length; i++) {
+      var nb = neighbors[i];
+      if (!visited[nb]) {
+        visited[nb] = true;
+        queue.push(current.concat([nb]));
       }
     }
   }
-
   return null;
 }
 
-function highlightPath(path) {
-  const allNodes = network.body.data.nodes.get();
-  const allEdges = network.body.data.edges.get();
+function npHighlightPath(path) {
+  var allNodes = network.body.data.nodes.get();
+  var allEdges = network.body.data.edges.get();
+  var pathSet = {};
+  path.forEach(function(id) { pathSet[id] = true; });
 
-  // Store original colors
-  allNodes.forEach(node => {
-    originalNodeColors[node.id] = node.color;
-  });
-  allEdges.forEach(edge => {
-    originalEdgeColors[edge.id] = edge.color;
-  });
-
-  // Dim all nodes and edges
-  const nodeUpdates = allNodes.map(node => ({
-    id: node.id,
-    opacity: path.includes(node.id) ? 1.0 : 0.15,
-    size: path.includes(node.id) ? (node.size || 10) * 1.5 : node.size,
-    color: path.includes(node.id) ? {
-      background: '#FF6B6B',
-      border: '#FF0000',
-      highlight: {background: '#FF8888', border: '#FF0000'}
-    } : node.color
-  }));
-
-  // Highlight edges in path
-  const pathEdges = [];
-  for (let i = 0; i < path.length - 1; i++) {
-    const from = path[i];
-    const to = path[i + 1];
-    const edge = allEdges.find(e => e.from === from && e.to === to);
-    if (edge) pathEdges.push(edge.id);
+  var pathEdgeIds = {};
+  for (var i = 0; i < path.length - 1; i++) {
+    var from = path[i], to = path[i + 1];
+    allEdges.forEach(function(e) {
+      if ((e.from === from && e.to === to) || (e.from === to && e.to === from)) {
+        pathEdgeIds[e.id] = true;
+      }
+    });
   }
 
-  const edgeUpdates = allEdges.map(edge => ({
-    id: edge.id,
-    color: pathEdges.includes(edge.id) ? '#FF6B6B' : edge.color,
-    width: pathEdges.includes(edge.id) ? 4 : (edge.width || 1),
-    opacity: pathEdges.includes(edge.id) ? 1.0 : 0.15
-  }));
+  var nodeUpdates = allNodes.map(function(node) {
+    var inPath = pathSet[node.id];
+    return {
+      id: node.id,
+      opacity: inPath ? 1.0 : 0.1,
+      size: inPath ? (npOriginalNodeState[node.id] ? npOriginalNodeState[node.id].size * 1.5 : 15) : node.size,
+      color: inPath ? { background: '#FF6B6B', border: '#FF0000',
+                        highlight: { background: '#FF8888', border: '#FF0000' } }
+                    : node.color
+    };
+  });
+
+  var edgeUpdates = allEdges.map(function(edge) {
+    var inPath = pathEdgeIds[edge.id];
+    return {
+      id: edge.id,
+      color: inPath ? '#FF6B6B' : edge.color,
+      width: inPath ? 4 : 1,
+      opacity: inPath ? 1.0 : 0.1
+    };
+  });
 
   network.body.data.nodes.update(nodeUpdates);
   network.body.data.edges.update(edgeUpdates);
-
-  // Focus on path
-  network.fit({
-    nodes: path,
-    animation: true
-  });
+  network.fit({ nodes: path, animation: true });
 }
 
-function clearPath() {
+function npClearPath() {
   document.getElementById('path-source').value = '';
   document.getElementById('path-target').value = '';
   document.getElementById('path-results').innerHTML = '';
   document.getElementById('path-source').style.borderColor = '#444';
   document.getElementById('path-target').style.borderColor = '#444';
-
-  // Restore original appearance
-  const allNodes = network.body.data.nodes.get();
-  const allEdges = network.body.data.edges.get();
-
-  const nodeUpdates = allNodes.map(node => ({
-    id: node.id,
-    opacity: 1.0,
-    size: node.size || 10,
-    color: originalNodeColors[node.id] || node.color
-  }));
-
-  const edgeUpdates = allEdges.map(edge => ({
-    id: edge.id,
-    color: originalEdgeColors[edge.id] || edge.color,
-    width: edge.width || 1,
-    opacity: 1.0
-  }));
-
-  network.body.data.nodes.update(nodeUpdates);
-  network.body.data.edges.update(edgeUpdates);
-
-  network.fit();
-}
+  npPathActive = false;
+  if (Object.keys(npOriginalNodeState).length > 0) {
+    npRestore();
+  }
 }
 
-// Initialize path finder when page loads
-initPathFinder();
+// ---- Wire up click-to-fill ----
+function npInitClickHandler() {
+  if (typeof network === 'undefined' || !network) {
+    setTimeout(npInitClickHandler, 100);
+    return;
+  }
+  network.on('click', function(params) {
+    if (params.nodes.length === 0) return;
+    var nodeId = params.nodes[0];
+    var src = document.getElementById('path-source');
+    var tgt = document.getElementById('path-target');
+    if (!src.value) {
+      src.value = nodeId;
+      src.style.borderColor = '#4ECDC4';
+    } else if (!tgt.value) {
+      tgt.value = nodeId;
+      tgt.style.borderColor = '#4ECDC4';
+    } else {
+      tgt.value = nodeId;
+    }
+  });
+}
+npInitClickHandler();
 </script>
 """
         components.append(path_finder_html)

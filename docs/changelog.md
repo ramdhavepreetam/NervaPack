@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.6.6] - 2026-07-15
+
+### Fixed
+- **"Find Path" and "Clear Path" buttons did nothing** — `findPath()` and `clearPath()` were defined inside the `initPathFinder()` closure but called from `onclick=` HTML attributes in global scope, producing a silent `ReferenceError`. All path finder functions are now top-level globals prefixed `np` (`npFindPath`, `npClearPath`, `npClearSearch`, `npBFS`, `npHighlightPath`, `npSnapshot`, `npRestore`).
+- **"Clear" (search and path) did not fully restore the graph** — clearing after a highlight was restoring `node.size` which had already been scaled 1.5× by the highlight. Original node sizes and colours are now snapshotted into `npOriginalNodeState` before any modification and restored exactly on clear.
+- **Path finder only searched forward edges** — BFS was unidirectional so paths only existed if you clicked source → target in the correct direction. BFS now traverses both `edge.from → edge.to` and `edge.to → edge.from`, making path finding work regardless of which node you click first.
+- **`lib/bindings/utils.js` 404 in enhanced mode** — same pyvis relative-path strip now applied to `export_html_enhanced()` output as well as basic mode.
+
+### Tests
+- Added 7 new tests in `TestEnhancedVisualizerHTML` covering all four bugs above (global function scope, correct restore logic, bidirectional BFS, no broken lib/ paths).
+
+---
+
 ## [0.6.5] - 2026-07-15
 
 ### Fixed

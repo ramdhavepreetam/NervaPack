@@ -16,6 +16,12 @@ known failure modes that broke production:
 
   4. Large label truncation — node labels > 30 chars must be trimmed.
 
+  5. Enhanced visualizer — Path Finder and Clear Search bugs:
+     - findPath/clearPath were inside initPathFinder() closure but called from
+       onclick= attributes (global scope) → ReferenceError, buttons did nothing
+     - clearSearch/clearPath restored node.size from already-scaled value,
+       so Clear never fully restored the graph
+
 Run with:
     python3 -m pytest tests/test_visualize_e2e.py -v
 """
@@ -169,6 +175,102 @@ class TestVisualizerExportHTML(unittest.TestCase):
         html = Path(self.out).read_text(encoding="utf-8")
         self.assertIn("<html", html.lower())
         self.assertIn("</html>", html.lower())
+
+
+class TestEnhancedVisualizerHTML(unittest.TestCase):
+    """Tests for export_html_enhanced — path finder and search clear bugs."""
+
+    def setUp(self):
+        from nervapack.graph.visualizer_v2 import export_html_enhanced
+        self.export_html_enhanced = export_html_enhanced
+        self.graph = _make_sample_graph()
+        self.tmpdir = tempfile.mkdtemp()
+        self.out = os.path.join(self.tmpdir, "enhanced.html")
+
+    def _html(self):
+        self.export_html_enhanced(self.graph, self.out, enable_search=True,
+                                   enable_community_detection=False)
+        return Path(self.out).read_text(encoding="utf-8")
+
+    # ------------------------------------------------------------------
+    # 11. No relative lib/ paths in enhanced output
+    # ------------------------------------------------------------------
+    def test_enhanced_no_broken_relative_lib_paths(self):
+        html = self._html()
+        broken = re.findall(r'(?:src|href)=["\']lib/[^"\']+["\']', html)
+        self.assertEqual(broken, [],
+            f"Enhanced HTML has relative lib/ paths that will 404: {broken}")
+
+    # ------------------------------------------------------------------
+    # 12. No TomSelect in enhanced output
+    # ------------------------------------------------------------------
+    def test_enhanced_no_tomselect(self):
+        html = self._html()
+        self.assertNotIn("TomSelect", html)
+        self.assertNotIn("tom-select", html)
+
+    # ------------------------------------------------------------------
+    # 13. Path finder functions are in GLOBAL scope (npFindPath, npClearPath)
+    #     Previously findPath/clearPath were trapped inside initPathFinder()
+    #     closure and unreachable from onclick= attributes.
+    # ------------------------------------------------------------------
+    def test_path_finder_functions_in_global_scope(self):
+        html = self._html()
+        # Must be top-level function declarations (not inside another function body)
+        self.assertIn("function npFindPath()", html,
+            "npFindPath() not defined at global scope — onclick will fail")
+        self.assertIn("function npClearPath()", html,
+            "npClearPath() not defined at global scope — onclick will fail")
+        # Buttons must reference the global names
+        self.assertIn('onclick="npFindPath()"', html,
+            "Find Path button does not call npFindPath()")
+        self.assertIn('onclick="npClearPath()"', html,
+            "Clear Path button does not call npClearPath()")
+
+    # ------------------------------------------------------------------
+    # 14. Clear Search calls npClearSearch (not old clearSearch)
+    # ------------------------------------------------------------------
+    def test_clear_search_calls_global_function(self):
+        html = self._html()
+        self.assertIn('onclick="npClearSearch()"', html,
+            "Clear button calls wrong function name — will throw ReferenceError")
+        self.assertIn("function npClearSearch()", html,
+            "npClearSearch() not defined")
+
+    # ------------------------------------------------------------------
+    # 15. npSnapshot and npRestore exist (size-restore fix)
+    # ------------------------------------------------------------------
+    def test_snapshot_restore_functions_present(self):
+        html = self._html()
+        self.assertIn("function npSnapshot()", html,
+            "npSnapshot() missing — Clear will not restore correct node sizes")
+        self.assertIn("function npRestore()", html,
+            "npRestore() missing — Clear will not restore correct node sizes")
+
+    # ------------------------------------------------------------------
+    # 16. Path finder wires up bidirectional BFS (finds paths in both directions)
+    # ------------------------------------------------------------------
+    def test_bfs_is_bidirectional(self):
+        html = self._html()
+        # The BFS must traverse both edge.to and edge.from for each edge
+        self.assertIn("adj[edge.to]", html,
+            "BFS only searches forward edges — reverse paths will not be found")
+
+    # ------------------------------------------------------------------
+    # 17. npOriginalNodeState used for size restoration (not raw node.size)
+    # ------------------------------------------------------------------
+    def test_clear_uses_original_state_not_current_size(self):
+        html = self._html()
+        # clearSearch should use npOriginalNodeState, not node.size directly
+        self.assertIn("npOriginalNodeState", html)
+        # The old broken pattern: restoring to node.size which was already scaled
+        # Check that clearSearch/clearPath don't do `size: node.size || 10` naively
+        bad_restore = re.findall(
+            r'function np(?:ClearSearch|ClearPath|Restore).*?size:\s*node\.size\s*\|\|\s*10',
+            html, re.DOTALL
+        )
+        self.assertEqual(bad_restore, [],
+            "Clear still uses raw node.size (scaled value) instead of original snapshot")
 
 
 if __name__ == "__main__":
