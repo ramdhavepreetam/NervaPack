@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.6.2] - 2026-07-15
+
+### Performance
+- **Re-ingest now near-instant** — `VectorStore` checks which IDs already exist with identical content before embedding; re-running `nervapack ingest .` on an unchanged project drops from ~85s to <1s for markdown and is instant for AST entities. Only new or modified documents are sent to ONNX.
+- **Smaller chunk count** — `MarkdownChunker` now merges chunks shorter than 120 characters forward, reducing total chunk count by ~33% (1796 → 1190 on NervaPack's own docs). Proportionally faster first ingest and lower ChromaDB storage.
+
+---
+
 ## [0.6.1] - 2026-07-15
 
 ### Fixed
