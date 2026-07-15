@@ -236,17 +236,17 @@ sequenceDiagram
 ```
 project-root/
 ├── .nervapack/
-│   ├── graph.graphml              # NetworkX graph (XML format)
-│   ├── chroma_db/                 # ChromaDB vector store
-│   │   ├── chroma.sqlite3         # Metadata
-│   │   └── index/                 # Vector indices
+│   ├── graph.graphml              # NetworkX graph (XML format) — created by ingest/sync
+│   ├── chroma_db/                 # ChromaDB vector store — created by ingest/sync
+│   │   ├── chroma.sqlite3         # Metadata + embeddings index
+│   │   └── <uuid>/                # Vector index shards
 │   ├── memory.db                  # Agent memory (SQLite, FTS5, bi-temporal)
 │   ├── query_history.jsonl        # Query logs
-│   ├── graph.html                 # Generated visualizations
-│   ├── dependencies.html
-│   └── explore_*.html
+│   ├── graph.html                 # Interactive visualisation — created by `visualize`
+│   ├── dependencies.html          # Dependency graph — created by `dependencies`
+│   └── explore_*.html             # Entity neighbourhood views — created by `explore`
 │
-├── .nervapackignore               # Files to skip (like .gitignore)
+├── .nervapackignore               # Directories/files to skip during ingest (gitignore syntax)
 └── .mcp.json                      # MCP server config (optional)
 ```
 
