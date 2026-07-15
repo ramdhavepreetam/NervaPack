@@ -6,9 +6,15 @@ class MarkdownChunker:
         # A simple regex for matching markdown headers
         self.header_regex = re.compile(r'^(#{1,6})\s+(.*)')
 
+    # Chunks shorter than this (chars) are merged into the next chunk instead
+    # of being embedded as standalone vectors — avoids wasting ONNX calls on
+    # single-line sections like "---" separators or one-word headers.
+    MIN_CHUNK_CHARS = 120
+
     def chunk_file(self, file_path: str) -> List[Dict[str, str]]:
         """
         Parses a Markdown file and returns chunks separated by headers.
+        Short chunks are merged forward to reduce the number of embeddings.
         """
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -16,38 +22,55 @@ class MarkdownChunker:
         except Exception:
             return []
 
-        chunks = []
-        current_chunk = []
+        raw: List[Dict[str, str]] = []
+        current_chunk: List[str] = []
         current_header = "Document Root"
-        
+
         for line in lines:
             match = self.header_regex.match(line)
             if match:
-                # Save previous chunk
                 if current_chunk:
                     content = "".join(current_chunk).strip()
                     if content:
-                        chunks.append({
+                        raw.append({
                             "header": current_header,
                             "content": content,
-                            "file_path": file_path
+                            "file_path": file_path,
                         })
                 current_header = match.group(2).strip()
                 current_chunk = [line]
             else:
                 current_chunk.append(line)
-                
-        # Add the last chunk
+
         if current_chunk:
             content = "".join(current_chunk).strip()
             if content:
-                chunks.append({
+                raw.append({
                     "header": current_header,
                     "content": content,
-                    "file_path": file_path
+                    "file_path": file_path,
                 })
-                
-        return chunks
+
+        # Merge short chunks forward to reduce embedding count
+        merged: List[Dict[str, str]] = []
+        pending: Dict[str, str] | None = None
+        for chunk in raw:
+            if pending is None:
+                pending = chunk
+            elif len(pending["content"]) < self.MIN_CHUNK_CHARS:
+                # Absorb pending into current chunk
+                pending = {
+                    "header": pending["header"],
+                    "content": pending["content"] + "\n\n" + chunk["content"],
+                    "file_path": file_path,
+                }
+            else:
+                merged.append(pending)
+                pending = chunk
+        if pending is not None:
+            merged.append(pending)
+
+        return merged
 
 _MD_SKIP_DIRS = {
     ".git", "node_modules", "venv", ".venv", "env", "__pycache__",
