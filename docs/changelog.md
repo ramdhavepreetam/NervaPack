@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.6.9] - 2026-07-16
+
+### Added
+- **Corporate / air-gapped environment support** — `NERVAPACK_ONNX_MODEL` environment variable lets you point NervaPack at a local copy of the `all-MiniLM-L6-v2` ONNX model instead of downloading it from the internet. Set it to the model directory (containing the `onnx/` subfolder) and no network access is needed. Useful for corporate networks with egress restrictions, shared team drives, and CI runners without internet.
+- **Documented air-gapped setup** — new section in `docs/getting-started/installation.md` covering three options: pre-copy model via tar, shared network drive via env var, and Ollama embeddings as an alternative.
+
+### Changed
+- `VectorStore` now calls `_make_embedding_function()` at init time, which honours `NERVAPACK_ONNX_MODEL` automatically — no CLI flag needed for the env-var path.
+
+---
+
 ## [0.6.8] - 2026-07-16
 
 ### Added

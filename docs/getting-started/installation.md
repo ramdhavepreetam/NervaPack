@@ -205,6 +205,70 @@ rm -rf ~/.cache/chroma
 
 ---
 
+## Corporate / Air-Gapped Environments
+
+NervaPack's vector search uses the `all-MiniLM-L6-v2` ONNX model (86 MB), which ChromaDB downloads from an AWS S3 bucket on first use. If your corporate network blocks external downloads, follow one of these approaches:
+
+### Option A — Pre-copy the model (recommended)
+
+Transfer the model from a machine that has internet access:
+
+**Step 1: On a machine with internet access**, run any `nervapack ingest` or `nervapack query` to trigger the download. The model is cached at:
+```
+~/.cache/chroma/onnx_models/all-MiniLM-L6-v2/
+```
+
+**Step 2: Zip the model folder:**
+```bash
+tar -czf nervapack-onnx-model.tar.gz \
+    -C ~/.cache/chroma/onnx_models/all-MiniLM-L6-v2 onnx
+```
+
+**Step 3: Copy** `nervapack-onnx-model.tar.gz` to your corporate machine via USB, internal file share, or any approved transfer method.
+
+**Step 4: On the corporate machine**, restore the model:
+```bash
+mkdir -p ~/.cache/chroma/onnx_models/all-MiniLM-L6-v2
+tar -xzf nervapack-onnx-model.tar.gz \
+    -C ~/.cache/chroma/onnx_models/all-MiniLM-L6-v2
+```
+
+That's it — `nervapack ingest .` and `nervapack query` now work with no internet access. ChromaDB finds the model in the standard cache path and skips the download.
+
+### Option B — Point to a shared network drive
+
+If your team has a shared drive, place the model there once and point NervaPack to it via an environment variable:
+
+```bash
+# Place the model folder on a shared drive, e.g.:
+# \\corp-share\tools\nervapack-onnx\all-MiniLM-L6-v2\onnx\
+
+# On each developer machine, set:
+export NERVAPACK_ONNX_MODEL=/mnt/corp-share/tools/nervapack-onnx/all-MiniLM-L6-v2
+
+# Add to ~/.bashrc or ~/.zshrc to persist:
+echo 'export NERVAPACK_ONNX_MODEL=/mnt/corp-share/tools/nervapack-onnx/all-MiniLM-L6-v2' >> ~/.bashrc
+```
+
+NervaPack reads `NERVAPACK_ONNX_MODEL` at startup and loads the model directly from that path — no download, no cache needed.
+
+### Option C — Use Ollama embeddings
+
+If Ollama is available on your corporate network (or internally hosted):
+
+```bash
+nervapack ingest . --embeddings ollama
+```
+
+Set permanently via environment variable:
+```bash
+export NERVAPACK_EMBEDDINGS=ollama
+```
+
+Ollama must be reachable at `http://localhost:11434` (the default). If it's on a different host, contact us — support for a custom Ollama host URL is on the roadmap.
+
+---
+
 ## Troubleshooting Installation
 
 ### Python version errors
