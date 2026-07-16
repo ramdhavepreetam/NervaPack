@@ -87,7 +87,7 @@ def query(prompt: str, max_hops: int = 1) -> str:
     subgraph = retriever.retrieve_context(start_nodes, max_hops=max_hops)
     context = retriever.format_as_markdown(subgraph)
 
-    # Append a compact token summary
+    # Append a compact token summary and record in history
     try:
         from nervapack.graph.token_meter import count_tokens, naive_rag_text
         np_tokens, exact = count_tokens(context)
@@ -99,6 +99,24 @@ def query(prompt: str, max_hops: int = 1) -> str:
             f"\n\n---\n*NervaPack: {prefix}{np_tokens:,} tokens "
             f"(vs {prefix}{naive_tokens:,} naive — {saved_pct}% saved)*"
         )
+        # Record in query history so MCP/Copilot usage counts toward savings totals
+        try:
+            from nervapack.graph.query_history import QueryHistory
+            import time as _time
+            QueryHistory().add_query(
+                query=prompt,
+                seed_nodes_count=len(start_nodes),
+                expanded_nodes_count=subgraph.number_of_nodes(),
+                total_nodes_retrieved=subgraph.number_of_nodes(),
+                edges_followed=subgraph.number_of_edges(),
+                traversal_depth=max_hops,
+                nervapack_tokens=np_tokens,
+                naive_tokens=naive_tokens,
+                source_files_count=len(source_files),
+                execution_time_ms=0.0,  # not tracked at MCP level
+            )
+        except Exception:
+            pass
     except Exception:
         pass
 

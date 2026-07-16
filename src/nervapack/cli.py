@@ -1078,6 +1078,7 @@ def history(
     limit: int = typer.Option(10, "--limit", "-n", help="Number of recent queries to show"),
     stats: bool = typer.Option(False, "--stats", help="Show aggregate statistics"),
     clear: bool = typer.Option(False, "--clear", help="Clear all query history"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show NervaPack and naive token counts per query"),
 ):
     """
     View query history and analytics.
@@ -1162,11 +1163,14 @@ def history(
     # Create history table
     history_table = Table(box=box.MINIMAL_DOUBLE_HEAD, show_header=True, header_style="bold cyan")
     history_table.add_column("#", style="dim", width=3)
-    history_table.add_column("Time", style="dim", width=16)
-    history_table.add_column("Query", style="white", max_width=50)
+    history_table.add_column("Time", style="dim", width=16, no_wrap=True)
+    history_table.add_column("Query", style="white", width=22 if verbose else None, max_width=22 if verbose else 50, no_wrap=verbose)
     history_table.add_column("Nodes", justify="right", style="cyan", width=6)
     history_table.add_column("Savings", justify="right", style="green", width=8)
-    history_table.add_column("Time", justify="right", style="yellow", width=8)
+    history_table.add_column("Elapsed", justify="right", style="yellow", width=8)
+    if verbose:
+        history_table.add_column("NP Tokens", justify="right", style="green", width=10)
+        history_table.add_column("Naive Tokens", justify="right", style="red", width=13)
 
     for i, query in enumerate(queries, 1):
         # Format timestamp
@@ -1190,14 +1194,18 @@ def history(
         else:
             time_str_exec = f"{query.execution_time_ms/1000:.1f}s"
 
-        history_table.add_row(
+        row = [
             str(i),
             time_str,
             query_text,
             str(query.total_nodes_retrieved),
             savings_str,
             time_str_exec,
-        )
+        ]
+        if verbose:
+            row.append(f"{query.nervapack_tokens:,}")
+            row.append(f"{query.naive_tokens:,}")
+        history_table.add_row(*row)
 
     console.print(history_table)
 
@@ -1205,10 +1213,105 @@ def history(
     total_savings = sum(q.naive_tokens - q.nervapack_tokens for q in queries)
     avg_savings_pct = sum(q.token_savings_pct for q in queries) / len(queries)
 
-    console.print(f"\n[dim]Showing {len(queries)} most recent queries")
+    console.print(f"\n[dim]Showing {len(queries)} most recent queries[/dim]")
     console.print(f"Average token savings: [green]{avg_savings_pct:.1f}%[/green]")
     console.print(f"Total tokens saved: [green]{format_number(total_savings)}[/green]")
-    console.print(f"\nUse [cyan]--limit N[/cyan] to show more queries or [cyan]--stats[/cyan] for detailed analytics.[/dim]")
+    console.print(f"\n[dim]Use [cyan]--limit N[/cyan] to show more queries or [cyan]--stats[/cyan] for detailed analytics.[/dim]")
+
+@app.command()
+def savings(
+    json_out: bool = typer.Option(False, "--json", help="Output as JSON (for badges, scripts, READMEs)"),
+):
+    """
+    Show a one-screen summary of cumulative token savings across all queries.
+
+    Compares NervaPack's focused context against naive RAG (full file dump)
+    and shows total tokens saved, average reduction %, and cost impact.
+    """
+    import json as _json
+    from nervapack.graph.query_history import QueryHistory
+    from nervapack.graph.analytics import format_number
+    from rich.panel import Panel
+    from rich.table import Table
+    from rich import box
+    from rich.text import Text
+    from rich.console import Group
+    from rich.rule import Rule
+
+    history_manager = QueryHistory()
+    stats = history_manager.get_statistics()
+
+    if stats["total_queries"] == 0:
+        console.print("[yellow]No query history yet.[/yellow]")
+        console.print("[dim]Run [cyan]nervapack query \"your question\"[/cyan] first to start tracking savings.[/dim]")
+        return
+
+    if json_out:
+        total_np = sum(
+            q.nervapack_tokens for q in history_manager.get_all_queries()
+        )
+        total_naive = sum(
+            q.naive_tokens for q in history_manager.get_all_queries()
+        )
+        out = {
+            "total_queries": stats["total_queries"],
+            "avg_token_reduction_pct": round(stats["avg_token_savings_pct"], 1),
+            "total_tokens_saved": stats["total_tokens_saved"],
+            "total_nervapack_tokens": total_np,
+            "total_naive_tokens": total_naive,
+            "cost_saved_gpt4_usd": round(stats["total_cost_saved_gpt4"], 4),
+            "cost_saved_sonnet_usd": round(stats["total_cost_saved_sonnet"], 4),
+            "top_topics": [w for w, _ in stats["most_common_words"][:5]],
+        }
+        console.print(_json.dumps(out, indent=2))
+        return
+
+    # Compute totals for display
+    all_queries = history_manager.get_all_queries()
+    total_np = sum(q.nervapack_tokens for q in all_queries)
+    total_naive = sum(q.naive_tokens for q in all_queries)
+    pct_of_naive = (total_np / max(total_naive, 1)) * 100
+    topics = ", ".join(w for w, _ in stats["most_common_words"][:5]) or "—"
+
+    # Build metrics table
+    table = Table(box=box.SIMPLE, show_header=False, padding=(0, 2))
+    table.add_column("Metric", style="cyan", min_width=34)
+    table.add_column("Value", style="bold white", justify="right")
+
+    table.add_row("Total queries run", format_number(stats["total_queries"]))
+    table.add_row("Average token reduction", f"[green]{stats['avg_token_savings_pct']:.1f}%[/green]")
+    table.add_row("Total tokens saved", f"[green]{format_number(stats['total_tokens_saved'])}[/green]")
+    table.add_row("", "")
+    table.add_row("Naive RAG would have used", f"[red]{format_number(total_naive)}[/red] tokens")
+    table.add_row(
+        "NervaPack used",
+        f"[green]{format_number(total_np)}[/green] tokens  [dim]({pct_of_naive:.1f}% of naive)[/dim]",
+    )
+    table.add_row("", "")
+    table.add_row(
+        "Cost saved  GPT-4o   ($2.50/1M)",
+        f"[yellow]${stats['total_cost_saved_gpt4']:.4f}[/yellow]",
+    )
+    table.add_row(
+        "Cost saved  Sonnet   ($3.00/1M)",
+        f"[yellow]${stats['total_cost_saved_sonnet']:.4f}[/yellow]",
+    )
+    table.add_row("", "")
+    table.add_row("Top query topics", f"[dim]{topics}[/dim]")
+
+    footer = Text.from_markup(
+        f"\n  [dim]Run [cyan]nervapack history --stats[/cyan] for per-query breakdown  "
+        f"·  [cyan]nervapack savings --json[/cyan] for machine-readable output[/dim]"
+    )
+
+    content = Group(table, Rule(style="dim"), footer)
+    console.print(Panel(
+        content,
+        title="[bold cyan] NervaPack Token Savings Summary [/bold cyan]",
+        border_style="cyan",
+        padding=(0, 1),
+    ))
+
 
 @app.command()
 def hotspots(

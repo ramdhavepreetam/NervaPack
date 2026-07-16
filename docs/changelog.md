@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.6.7] - 2026-07-16
+
+### Added
+- **`nervapack savings` command** — one-screen summary of cumulative token savings across all queries, showing total queries, average reduction %, total tokens saved, cost impact for GPT-4o and Sonnet, and top query topics. Use `--json` for machine-readable output.
+- **`nervapack history --verbose`** — adds `NP Tokens` and `Naive Tokens` columns to the history table so you can see the raw token counts per query alongside the percentage saved.
+- **MCP queries now record in history** — `nervapack-mcp` `query` tool now calls `QueryHistory.add_query()` after computing tokens, so usage via GitHub Copilot and Cursor accumulates in savings totals shown by `nervapack savings`.
+
+### Fixed
+- **`nervapack history` crash** — `[dim]` Rich markup tag spanned two separate `console.print()` calls, causing a `MarkupError`. Tags are now self-contained in each print call.
+
+---
+
 ## [0.6.6] - 2026-07-15
 
 ### Fixed

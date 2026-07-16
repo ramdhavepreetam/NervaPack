@@ -1,0 +1,14 @@
+{
+  "servers": {
+    "nervapack": {
+      "type": "stdio",
+      "command": "/Library/Frameworks/Python.framework/Versions/3.11/bin/nervapack-mcp",
+      "description": "NervaPack code graph — query_codebase, explore, impact, graph_status"
+    },
+    "nervapack-memory": {
+      "type": "stdio",
+      "command": "/Library/Frameworks/Python.framework/Versions/3.11/bin/nervapack-memory-mcp",
+      "description": "NervaPack agent memory — memory_store, memory_recall, memory_why, memory_timeline"
+    }
+  }
+}
