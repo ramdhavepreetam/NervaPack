@@ -96,8 +96,10 @@ def query(prompt: str, max_hops: int = 1) -> str:
         prefix = "" if exact else "~"
         saved_pct = round((1 - np_tokens / max(naive_tokens, 1)) * 100, 1)
         context += (
-            f"\n\n---\n*NervaPack: {prefix}{np_tokens:,} tokens "
-            f"(vs {prefix}{naive_tokens:,} naive — {saved_pct}% saved)*"
+            f"\n\n---\n"
+            f"**NervaPack:** {prefix}{np_tokens:,} tokens  "
+            f"(naive RAG: {prefix}{naive_tokens:,} — **{saved_pct}% saved**, "
+            f"~${max(naive_tokens - np_tokens, 0) * 2.50 / 1_000_000:.4f} GPT-4o cost per query)"
         )
         # Record in query history so MCP/Copilot usage counts toward savings totals
         try:
@@ -196,6 +198,23 @@ def graph_status() -> str:
                     lines.append(f"   - … and {len(changed) - 5} more")
             else:
                 lines.append("\n✅ Graph is up to date with the working tree.")
+    except Exception:
+        pass
+
+    # Append cumulative savings summary
+    try:
+        from nervapack.graph.query_history import QueryHistory
+        stats = QueryHistory().get_statistics()
+        if stats["total_queries"] > 0:
+            lines.append(f"\n### Cumulative token savings ({stats['total_queries']} queries)")
+            lines.append(
+                f"- Avg reduction: **{stats['avg_token_savings_pct']:.1f}%**  |  "
+                f"Total saved: **{stats['total_tokens_saved']:,}** tokens"
+            )
+            lines.append(
+                f"- Cost saved: **${stats['total_cost_saved_gpt4']:.4f}** (GPT-4o)  ·  "
+                f"**${stats['total_cost_saved_sonnet']:.4f}** (Sonnet)"
+            )
     except Exception:
         pass
 
@@ -311,6 +330,54 @@ def impact(target: str, max_hops: int = 1) -> str:
     if not found_any:
         return f"No inbound dependencies found for '{target}'."
         
+    return "\n".join(lines)
+
+
+# ── Tool 5: show_savings ─────────────────────────────────────────────────────
+
+@mcp.tool()
+def show_savings() -> str:
+    """
+    Show cumulative token savings across all NervaPack queries in this project.
+
+    Returns a Markdown table summarising total queries, average token reduction,
+    total tokens saved, and equivalent cost saved for GPT-4o and Claude Sonnet.
+    Call this when the user asks how much context or cost NervaPack is saving,
+    or to demonstrate NervaPack's efficiency to others.
+    """
+    try:
+        from nervapack.graph.query_history import QueryHistory
+        history = QueryHistory()
+        stats = history.get_statistics()
+    except Exception as e:
+        return f"Could not load query history: {e}"
+
+    if stats["total_queries"] == 0:
+        return (
+            "No query history yet.\n\n"
+            "Run a few `query` calls first — savings accumulate automatically."
+        )
+
+    all_q = history.get_all_queries()
+    total_np = sum(q.nervapack_tokens for q in all_q)
+    total_naive = sum(q.naive_tokens for q in all_q)
+    pct_of_naive = (total_np / max(total_naive, 1)) * 100
+    topics = ", ".join(w for w, _ in stats["most_common_words"][:5]) or "—"
+
+    lines = [
+        "## NervaPack Token Savings",
+        "",
+        "| Metric | Value |",
+        "|--------|-------|",
+        f"| Total queries | {stats['total_queries']} |",
+        f"| Average token reduction | **{stats['avg_token_savings_pct']:.1f}%** |",
+        f"| Total tokens saved | **{stats['total_tokens_saved']:,}** |",
+        f"| Naive RAG total | {total_naive:,} tokens |",
+        f"| NervaPack total | {total_np:,} tokens ({pct_of_naive:.1f}% of naive) |",
+        f"| Cost saved — GPT-4o ($2.50/1M) | **${stats['total_cost_saved_gpt4']:.4f}** |",
+        f"| Cost saved — Sonnet ($3.00/1M) | **${stats['total_cost_saved_sonnet']:.4f}** |",
+        f"| Top query topics | {topics} |",
+    ]
     return "\n".join(lines)
 
 

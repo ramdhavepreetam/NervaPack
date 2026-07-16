@@ -7,13 +7,13 @@
     "url": "https://github.com/ramdhavepreetam/NervaPack",
     "source": "github"
   },
-  "version": "0.6.7",
+  "version": "0.6.8",
   "packages": [
     {
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "nervapack",
-      "version": "0.6.7",
+      "version": "0.6.8",
       "transport": {
         "type": "stdio"
       },
@@ -105,6 +105,10 @@
     {
       "name": "memory_verify_staleness",
       "description": "Scan TOUCHES edges and flag memories whose source file changed since stored"
+    },
+    {
+      "name": "show_savings",
+      "description": "Cumulative token savings summary — queries, avg reduction %, total saved, cost impact"
     }
   ],
   "_meta": {

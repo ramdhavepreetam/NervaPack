@@ -34,6 +34,7 @@ def ingest(
     model: str = typer.Option(None, help="Model name (provider-specific)"),
     api_key: str = typer.Option(None, help="API key for cloud providers"),
     embeddings: str = typer.Option(None, help="Embedding backend (onnx, ollama). Defaults to ONNX."),
+    no_bind: bool = typer.Option(False, "--no-bind", help="Skip LLM doc-to-code binding (fast keyword binding only). Useful for quick re-ingests."),
 ):
     """
     Ingest a repository, building the AST and Vector graph.
@@ -107,40 +108,43 @@ def ingest(
             # Ingest to vector store
             vstore.ingest_chunks(md_chunks)
 
-            # Get LLM provider
-            console.print("\n[bold cyan]Setting up LLM provider...[/bold cyan]")
+            # Get LLM provider (skip if --no-bind)
             provider = None
-            try:
-                provider = get_llm_provider(
-                    provider=llm,
-                    model=model,
-                    api_key=api_key
-                )
-                provider_name = provider.get_provider_name()
-                
-                # Validate configuration
-                if not provider.validate_config():
-                    raise ValueError(f"Provider {provider_name} configuration invalid")
-                
-                console.print(f"Using LLM provider: [green]{provider_name}[/green]")
+            if no_bind:
+                console.print("[dim]--no-bind set: skipping LLM binding, using keyword matching only.[/dim]")
+            else:
+                console.print("\n[bold cyan]Setting up LLM provider...[/bold cyan]")
+                try:
+                    provider = get_llm_provider(
+                        provider=llm,
+                        model=model,
+                        api_key=api_key
+                    )
+                    provider_name = provider.get_provider_name()
 
-                # Show cost estimate for cloud providers
-                estimated_cost = provider.estimate_cost(len(md_chunks))
-                if estimated_cost is not None and estimated_cost > 0:
-                    console.print(f"\n[bold yellow]💰 Cost Estimate[/bold yellow]")
-                    console.print(f"Provider: {provider_name}")
-                    console.print(f"Markdown chunks to bind: {len(md_chunks)}")
-                    console.print(f"Estimated cost: [yellow]${estimated_cost:.2f}[/yellow]")
-                    console.print(f"(Actual cost may vary based on content length)\n")
+                    # Validate configuration
+                    if not provider.validate_config():
+                        raise ValueError(f"Provider {provider_name} configuration invalid")
 
-                    # Ask for confirmation
-                    if not Confirm.ask("Proceed with cloud LLM binding?"):
-                        console.print("[yellow]Binding cancelled. Graph created but docs not linked.[/yellow]")
-                        provider = None
+                    console.print(f"Using LLM provider: [green]{provider_name}[/green]")
 
-            except Exception as e:
-                console.print(f"[bold yellow]Notice: Install/Start Ollama to unlock semantic doc-code binding. Building structural graph only. ({e})[/bold yellow]")
-                provider = None
+                    # Show cost estimate for cloud providers
+                    estimated_cost = provider.estimate_cost(len(md_chunks))
+                    if estimated_cost is not None and estimated_cost > 0:
+                        console.print(f"\n[bold yellow]💰 Cost Estimate[/bold yellow]")
+                        console.print(f"Provider: {provider_name}")
+                        console.print(f"Markdown chunks to bind: {len(md_chunks)}")
+                        console.print(f"Estimated cost: [yellow]${estimated_cost:.2f}[/yellow]")
+                        console.print(f"(Actual cost may vary based on content length)\n")
+
+                        # Ask for confirmation
+                        if not Confirm.ask("Proceed with cloud LLM binding?"):
+                            console.print("[yellow]Binding cancelled. Graph created but docs not linked.[/yellow]")
+                            provider = None
+
+                except Exception as e:
+                    console.print(f"[bold yellow]Notice: Install/Start Ollama to unlock semantic doc-code binding. Building structural graph only. ({e})[/bold yellow]")
+                    provider = None
 
             console.print("Binding documentation to AST (this may take a while)...")
             import re as _re

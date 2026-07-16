@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.6.8] - 2026-07-16
+
+### Added
+- **`show_savings` MCP tool** — call `show_savings` from inside Claude Code or Copilot to get a Markdown table of cumulative token savings: total queries, average reduction %, total tokens saved, cost impact (GPT-4o + Sonnet), and top query topics. This lets users demonstrate NervaPack's value without leaving their AI tool.
+- **Savings summary in `graph_status`** — every `graph_status` MCP call now appends a cumulative savings section (avg reduction %, total saved, cost), so the running total is visible without needing a separate `show_savings` call.
+
+### Changed
+- **Sharper per-query footer in `query()` MCP** — changed from subtle italic to bold text including cost per query: `**NervaPack:** X tokens (naive RAG: Y — **Z% saved**, ~$N GPT-4o cost per query)`.
+
+---
+
 ## [0.6.7] - 2026-07-16
 
 ### Added
