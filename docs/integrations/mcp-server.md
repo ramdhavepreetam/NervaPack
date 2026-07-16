@@ -4,7 +4,7 @@ NervaPack ships two MCP servers. Use both together for the full picture: the kno
 
 **MCP Registry:** `io.github.ramdhavepreetam/nervapack` — listed on the [official MCP Registry](https://registry.modelcontextprotocol.io).
 
-Supported editors: **Claude Code**, **Cursor**, **Windsurf** — all use the same `.mcp.json` config file.
+Supported editors: **Claude Code**, **Cursor**, **Windsurf**, **GitHub Copilot** — all use MCP config files (format varies by editor, see setup below).
 
 ---
 
@@ -32,6 +32,43 @@ nervapack ingest .
 
 Add `.mcp.json` (see the config below), then open the Cursor MCP panel (Settings → MCP) and click **Reload**.
 
+### GitHub Copilot (VS Code)
+
+GitHub Copilot in VS Code reads MCP servers from `.vscode/mcp.json` in the project root. Note that this uses a **different format** from `.mcp.json` — the top-level key is `servers` (not `mcpServers`) and each server requires `type: "stdio"`.
+
+!!! warning "VS Code version requirement"
+    Copilot MCP support requires **VS Code 1.99 or later**. Earlier versions load the file but silently ignore MCP servers.
+
+Create `.vscode/mcp.json` in your project root:
+
+```json
+{
+  "servers": {
+    "nervapack": {
+      "type": "stdio",
+      "command": "/path/to/nervapack-mcp",
+      "description": "NervaPack code graph — query, explore, impact, graph_status, show_savings"
+    },
+    "nervapack-memory": {
+      "type": "stdio",
+      "command": "/path/to/nervapack-memory-mcp",
+      "description": "NervaPack agent memory — memory_store, memory_recall, memory_why, memory_timeline"
+    }
+  }
+}
+```
+
+Replace `/path/to/nervapack-mcp` with the absolute path to the binary. Find it with:
+
+```bash
+which nervapack-mcp
+# e.g. /Library/Frameworks/Python.framework/Versions/3.11/bin/nervapack-mcp
+```
+
+VS Code does not inherit your shell `$PATH`, so the absolute path is required.
+
+After saving the file, open the VS Code Command Palette and run **"MCP: List Servers"** to verify both servers appear.
+
 ### Windsurf
 
 Windsurf (Codeium) supports MCP via a global config file at `~/.codeium/windsurf/mcp_config.json`. You can also use a project-local `.mcp.json` — check your Windsurf version's docs for project-level support.
@@ -47,11 +84,11 @@ mkdir -p ~/.codeium/windsurf
   "mcpServers": {
     "nervapack": {
       "command": "nervapack-mcp",
-      "description": "NervaPack knowledge graph (v0.6.0) — query, graph_status, explore, impact"
+      "description": "NervaPack knowledge graph (v0.6.8) — query, graph_status, explore, impact"
     },
     "nervapack-memory": {
       "command": "nervapack-memory-mcp",
-      "description": "NervaPack agent memory (v0.6.0) — store, recall, and reason over facts across sessions"
+      "description": "NervaPack agent memory (v0.6.8) — store, recall, and reason over facts across sessions"
     }
   }
 }
@@ -72,20 +109,20 @@ Drop this in your project root for all editors:
   "mcpServers": {
     "nervapack": {
       "command": "nervapack-mcp",
-      "description": "NervaPack knowledge graph (v0.6.0) — query, graph_status, explore, impact"
+      "description": "NervaPack knowledge graph (v0.6.8) — query, graph_status, explore, impact"
     },
     "nervapack-memory": {
       "command": "nervapack-memory-mcp",
-      "description": "NervaPack agent memory (v0.6.0) — store, recall, and reason over facts across sessions"
+      "description": "NervaPack agent memory (v0.6.8) — store, recall, and reason over facts across sessions"
     }
   }
 }
 ```
 
-!!! warning "Breaking change in v0.6.0"
+!!! warning "Breaking change in v0.6.8"
     Two MCP tools were renamed. Update any hardcoded tool names in prompts or CLAUDE.md files:
 
-    | Old name (≤ v0.5.8) | New name (v0.6.0+) |
+    | Old name (≤ v0.5.8) | New name (v0.6.8+) |
     |---------------------|---------------------|
     | `query_codebase` | `query` |
     | `list_entities` | `explore` |
@@ -113,7 +150,7 @@ nervapack ingest .
   "mcpServers": {
     "nervapack": {
       "command": "nervapack-mcp",
-      "description": "NervaPack knowledge graph (v0.6.0) — query, graph_status, explore, impact"
+      "description": "NervaPack knowledge graph (v0.6.8) — query, graph_status, explore, impact"
     }
   }
 }
@@ -127,23 +164,39 @@ nervapack ingest .
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
-| `query` | `prompt: str`, `max_hops?: int` | Vector search → K-Hop BFS → focused Markdown context with token savings summary |
-| `graph_status` | — | Node/edge counts by type, language breakdown, unsynced file warnings |
+| `query` | `prompt: str`, `max_hops?: int` | Vector search → K-Hop BFS → focused Markdown context with bold token savings footer |
+| `graph_status` | — | Node/edge counts by type, language breakdown, unsynced file warnings, cumulative savings summary |
 | `explore` | `entity_type?: str`, `file_path?: str` | Browse all indexed classes, functions, imports, and markdown docs |
 | `impact` | `target: str`, `max_hops?: int` | Reverse dependency analysis — find what depends on a given entity |
+| `show_savings` | — | Markdown table of cumulative token savings across all queries — total queries, avg reduction %, cost saved |
 
 ### Example Interactions
 
 ```
 You:     "How does the sync command decide which files to re-ingest?"
 Claude:  → calls query("sync command file re-ingest logic")
-         → gets 1,180 tokens of focused context (vs 12,840 tokens naive)
+         → gets 1,180 tokens of focused context (vs 12,840 tokens naive — 90.8% saved)
          → answers precisely, citing exact line numbers
 
 You:     "What would break if I refactor VectorStore?"
 Claude:  → calls impact("VectorStore")
          → returns list of callers and dependents with their file paths
+
+You:     "How many tokens has NervaPack saved across all my queries?"
+Claude:  → calls show_savings()
+         → returns a Markdown table: 47 queries, 83.2% avg reduction, $0.11 GPT-4o cost saved
 ```
+
+### Token savings footer
+
+Every `query` call appends a bold efficiency line to the response, visible in your AI tool's chat:
+
+```
+**NervaPack:** 1,180 tokens  (naive RAG: 12,840 — **90.8% saved**, ~$0.0292 GPT-4o cost per query)
+```
+
+To see the running total, call `show_savings` or ask your AI to show it:
+> "Show me my NervaPack token savings."
 
 ---
 

@@ -50,6 +50,7 @@ The `ingest` command scans your repository and builds the complete knowledge gra
 | `--model` | Model name (provider-specific) | Provider default |
 | `--api-key` | API key for cloud providers | From env vars |
 | `--embeddings` | Embedding backend (`onnx`, `ollama`) | `onnx` |
+| `--no-bind` | Skip LLM binding; use fast keyword matching only | off |
 
 ---
 
@@ -66,6 +67,13 @@ nervapack ingest .
 nervapack ingest . --llm claude
 nervapack ingest . --llm openai --model gpt-4o
 ```
+
+### Fast re-ingest (no LLM)
+```bash
+nervapack ingest . --no-bind
+```
+
+Use this when you want to rebuild the graph quickly without the LLM doc-to-code binding step. All markdown nodes and AST entities are indexed correctly; only the semantic `EXPLAINS` edges are replaced with keyword-overlap edges. Completes in under 1 second regardless of project size.
 
 ### Different directory
 ```bash
@@ -114,7 +122,7 @@ Typical times for a Python project (ONNX embeddings, no LLM):
 
 **Warm re-ingest** is near-instant because NervaPack compares existing ChromaDB IDs against new content before embedding — only new or modified entities are sent to the ONNX model.
 
-**LLM binding** (the `EXPLAINS` edge step) adds time proportional to the number of markdown chunks. Cloud APIs (Claude, OpenAI) are 5–10× faster than Ollama for this step. Skip it with `--no-llm` if you only need the structural graph.
+**LLM binding** (the `EXPLAINS` edge step) adds time proportional to the number of markdown chunks. Cloud APIs (Claude, OpenAI) are 5–10× faster than Ollama for this step. Skip it with `--no-bind` if you only need the structural graph — ingest completes in under 1 second.
 
 ---
 

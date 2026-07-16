@@ -17,6 +17,7 @@ nervapack history [OPTIONS]
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--limit N` / `-n N` | `10` | Number of recent queries to show |
+| `--verbose` / `-v` | off | Add `NP Tokens` and `Naive Tokens` columns to the table |
 | `--stats` | off | Show aggregate statistics instead of the query list |
 | `--clear` | off | Clear all query history (prompts for confirmation) |
 
@@ -34,6 +35,11 @@ nervapack history
 nervapack history --limit 25
 ```
 
+### Show per-query token counts
+```bash
+nervapack history --verbose
+```
+
 ### Show aggregate statistics
 ```bash
 nervapack history --stats
@@ -49,16 +55,32 @@ nervapack history --clear
 ## Output — query list
 
 ```
-Recent Queries (showing last 10)
+Recent Queries (showing last 5)
 
-  #  │ Time              │ Query                           │ Nodes │ Savings │ Time
- ════╪═══════════════════╪═════════════════════════════════╪═══════╪═════════╪══════
-  1  │ 2026-07-05 21:00  │ How does memory_store work?     │    12 │  84.3%  │ 230ms
-  2  │ 2026-07-05 20:45  │ What is the recall pipeline?    │     9 │  81.1%  │ 198ms
-  ...
+  #  │ Time              │ Query                           │ Nodes │ Savings │ Elapsed
+ ════╪═══════════════════╪═════════════════════════════════╪═══════╪═════════╪════════
+  1  │ 2026-07-16 13:20  │ graph builder nodes and edges   │     5 │  80.0%  │ 267ms
+  2  │ 2026-07-16 13:19  │ MCP server tools and query      │     3 │  95.2%  │ 267ms
+  3  │ 2026-07-16 13:18  │ vector search and similarity    │     3 │  92.9%  │ 263ms
+  4  │ 2026-07-16 13:17  │ memory store and recall flow    │     2 │  85.0%  │ 266ms
+  5  │ 2026-07-16 13:16  │ how does ingest work            │     3 │  94.1%  │ 342ms
 
-Average token savings: 83.2%
-Total tokens saved: 42,800
+Average token savings: 89.4%
+Total tokens saved: 19,679
+```
+
+---
+
+## Output — `--verbose`
+
+Adds `NP Tokens` and `Naive Tokens` columns to show the raw token counts per query alongside the percentage:
+
+```
+  #  │ Time     │ Query                │ N… │ Sav…  │ Elapsed │ NP Tokens │ Naive Tokens
+ ════╪══════════╪══════════════════════╪════╪═══════╪═════════╪═══════════╪═════════════
+  1  │ 13:20    │ graph builder nod…   │  5 │ 80.0% │ 267ms   │     1,126 │       5,618
+  2  │ 13:19    │ MCP server tools …   │  3 │ 95.2% │ 267ms   │       286 │       5,943
+  3  │ 13:18    │ vector search and…   │  3 │ 92.9% │ 263ms   │       321 │       4,507
 ```
 
 ---
@@ -106,4 +128,5 @@ The same data appears in the **Query History** tab of `nervapack serve`.
 ## Related commands
 
 - [`nervapack query`](query.md) — run a query (populates history)
+- [`nervapack savings`](savings.md) — one-screen cumulative savings summary
 - [`nervapack serve`](serve.md) — interactive dashboard
