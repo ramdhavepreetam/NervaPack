@@ -157,6 +157,9 @@ class ASTParser:
         if ext not in LANGUAGE_REGISTRY:
             return None
         config = LANGUAGE_REGISTRY[ext]
+        # Regex-only languages (RPG/CL/COBOL) have no tree-sitter grammar.
+        if config.grammar_loader is None:
+            return None
         try:
             lang = config.grammar_loader()
             parser = Parser(lang)
@@ -182,6 +185,14 @@ class ASTParser:
 
     def parse_file(self, file_path: str) -> List[ParsedEntity]:
         ext = Path(file_path).suffix
+
+        # Regex path: languages without a tree-sitter grammar (RPG/CL/COBOL).
+        config = LANGUAGE_REGISTRY.get(ext)
+        if config is not None and config.regex_extractor is not None:
+            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                text = f.read()
+            return config.regex_extractor(text, file_path)
+
         parser = self._get_parser(ext)
         if parser is None:
             return []
