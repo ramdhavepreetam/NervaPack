@@ -4,15 +4,24 @@ import importlib
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional
 
+from nervapack.parser.regex_extractors import (
+    extract_cl,
+    extract_cobol,
+    extract_rpg,
+)
+
 
 @dataclass
 class LanguageConfig:
-    grammar_loader: Callable        # () -> tree_sitter.Language; raises ImportError if package missing
+    grammar_loader: Optional[Callable]  # () -> tree_sitter.Language; None for regex-only languages
     node_types: Dict[str, List[str]]  # "class"|"function"|"import" -> list of tree-sitter node type strings
     package_name: str               # e.g. "tree-sitter-go", used in error messages
     extra_name: str                 # pip extras key, e.g. "go" (empty string = bundled)
     name_field: str = "name"        # tree-sitter field used for default name extraction
     name_extractor: Optional[Callable] = None  # overrides name_field when node structure is non-standard
+    regex_extractor: Optional[Callable] = None  # (content, file_path) -> List[ParsedEntity]; set for
+                                                # languages with no tree-sitter grammar (RPG/CL/COBOL).
+                                                # Mutually exclusive with grammar_loader.
 
 
 def _loader(module: str, attr: str) -> Callable:
@@ -274,4 +283,34 @@ LANGUAGE_REGISTRY: Dict[str, LanguageConfig] = {
             "import":   ["using_directive"],
         },
     ),
+
+    # ── IBM i / mainframe (regex extractors, no tree-sitter grammar) ──────────
+    # These have no usable tree-sitter grammar on PyPI, so they use the
+    # pure-Python regex path in `regex_extractors`. Bundled, always on.
+
+    # RPG (free-form RPGLE, fixed-form RPG, embedded-SQL RPG)
+    ".rpgle":   LanguageConfig(grammar_loader=None, node_types={}, package_name="",
+                               extra_name="", regex_extractor=extract_rpg),
+    ".rpg":     LanguageConfig(grammar_loader=None, node_types={}, package_name="",
+                               extra_name="", regex_extractor=extract_rpg),
+    ".sqlrpgle": LanguageConfig(grammar_loader=None, node_types={}, package_name="",
+                                extra_name="", regex_extractor=extract_rpg),
+
+    # CL (Control Language programs / procedures)
+    ".clle":    LanguageConfig(grammar_loader=None, node_types={}, package_name="",
+                               extra_name="", regex_extractor=extract_cl),
+    ".clp":     LanguageConfig(grammar_loader=None, node_types={}, package_name="",
+                               extra_name="", regex_extractor=extract_cl),
+    ".cl":      LanguageConfig(grammar_loader=None, node_types={}, package_name="",
+                               extra_name="", regex_extractor=extract_cl),
+
+    # COBOL (fixed- and free-form, plus copybooks)
+    ".cbl":     LanguageConfig(grammar_loader=None, node_types={}, package_name="",
+                               extra_name="", regex_extractor=extract_cobol),
+    ".cob":     LanguageConfig(grammar_loader=None, node_types={}, package_name="",
+                               extra_name="", regex_extractor=extract_cobol),
+    ".cobol":   LanguageConfig(grammar_loader=None, node_types={}, package_name="",
+                               extra_name="", regex_extractor=extract_cobol),
+    ".cpy":     LanguageConfig(grammar_loader=None, node_types={}, package_name="",
+                               extra_name="", regex_extractor=extract_cobol),
 }

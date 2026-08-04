@@ -535,7 +535,9 @@ Simplicity and portability. NetworkX graphs serialize to GraphML, a standard for
 
 ### Why tree-sitter instead of regex/AST modules?
 
-Tree-sitter is fast, incremental, and supports 40+ languages with a unified API. Python's `ast` module only works for Python, and regex-based parsing is fragile.
+Tree-sitter is fast, incremental, and supports 40+ languages with a unified API. Python's `ast` module only works for Python, and regex-based parsing is fragile — so tree-sitter is the default for every language that has a grammar.
+
+The exception is the IBM i / mainframe stack (RPG, CL, COBOL), which has no usable tree-sitter grammar on PyPI. For those, NervaPack falls back to a pure-Python regex/line-based extractor (`nervapack.parser.regex_extractors`). This is scoped deliberately to tree-sitter-unreachable languages: they are column- and keyword-oriented, which keeps line-based extraction reliable, and it avoids vendoring and compiling C grammars in air-gapped environments.
 
 ### Can I use NervaPack on private repos?
 

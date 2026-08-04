@@ -63,7 +63,9 @@ Two collections:
 
 ### `nervapack.parser.ast_parser`
 
-Uses `tree-sitter` to walk a source file's syntax tree and extract `ParsedEntity` dataclass objects for every class definition, function definition, and import statement. Supported languages: Python, JavaScript, TypeScript, TSX.
+Uses `tree-sitter` to walk a source file's syntax tree and extract `ParsedEntity` dataclass objects for every class definition, function definition, and import statement. Tree-sitter languages: Python, JavaScript, TypeScript, JSX, TSX, Go, Rust, Java, C, C++, Ruby, C#.
+
+For languages that have no tree-sitter grammar on PyPI — RPG, CL, and COBOL (the IBM i / mainframe stack) — a second, pure-Python regex/line-based path in `nervapack.parser.regex_extractors` produces the same `ParsedEntity` objects. A language is routed to this path when its `LanguageConfig` sets `regex_extractor` (and `grammar_loader=None`). These extractors are column/keyword-oriented, matching how the languages are written, and require no external dependency.
 
 `scan_directory(path)` walks the directory tree, skipping `.git`, `node_modules`, `venv`, and `__pycache__`.
 

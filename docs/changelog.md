@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.0] - 2026-08-04
+
+### Added
+- **RPG, CL, and COBOL support (IBM i / mainframe)** — NervaPack now indexes `.rpgle`, `.rpg`, `.sqlrpgle` (RPG), `.clle`, `.clp`, `.cl` (CL), and `.cbl`, `.cob`, `.cobol`, `.cpy` (COBOL) source. These languages have no tree-sitter grammar on PyPI, so they use a new pure-Python, regex/line-based extractor path (`nervapack.parser.regex_extractors`) that runs alongside the tree-sitter path. Procedures, programs, divisions, sections, and paragraphs become symbol nodes; `/copy`, `COPY`, and `CALL`/`CALLPRC` become import nodes.
+- **Typed IBM i dependency edges** — CALL/CALLP/CALLPRC produce `CALLS` edges, `/copy` and `COPY` produce `COPIES` edges, and CL `DCLF FILE(...)` produces `DECLARES_FILE` edges, so the call graph and the copybook-usage graph are separately queryable instead of being flattened into generic references. Edges carry the source line (`ref_line`) and resolve cross-file and cross-language (e.g. an RPG program calling a COBOL program).
+- **Copybook / member resolution** — a copybook that defines no program or procedure (e.g. a bare `.cpy` of data items) now yields a module-level node named after the member, so `COPY MEMBER` from another program resolves to it.
+- Bundled and always on — no extra dependency to install, works air-gapped, consistent with the corporate/offline focus of v0.6.9.
+
+### Changed
+- `LanguageConfig` gained an optional `regex_extractor` field; `grammar_loader` is now `Optional` (regex-only languages set it to `None`). `ASTParser.parse_file` branches to the regex extractor when one is registered; no CLI changes were needed.
+- **Graph builder — short-name linking for IBM i.** The cross-file name-overlap heuristic previously ignored names shorter than 4 characters to limit false positives. IBM i program and file names are frequently ≤ 4 chars (`AR100`, `INV`, `ORD`, `PAY`), so that floor is now relaxed for regex-parsed entities — short-named programs link correctly. The floor still applies to tree-sitter languages. Typed IBM i edges are emitted directly from import metadata (no length floor) and are never overwritten by the generic heuristic.
+
+---
+
 ## [0.6.9] - 2026-07-16
 
 ### Added

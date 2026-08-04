@@ -1,6 +1,7 @@
 import networkx as nx
 import re
 from collections import defaultdict
+from pathlib import Path
 from typing import List, Dict, Set
 from nervapack.parser.ast_parser import ParsedEntity
 
@@ -39,11 +40,23 @@ class GraphBuilder:
             # Edge from File -> Entity
             self.graph.add_edge(file_node_id, entity_node_id, relation="DEFINES", source="ast", confidence=1.0)
 
-        # Heuristic cross-file name resolution
-        # Group entities by their names (filtering out short names to avoid excessive false positives)
+        # ── Typed edges from regex-parsed import entities ─────────────────────
+        # Regex extractors (RPG/CL/COBOL) emit `import` entities tagged with a
+        # ref_kind ("call"/"copy"/"file"). Turn each into a precise, typed edge
+        # to the matching definition — no length floor, since IBM i program and
+        # file names are frequently <= 4 chars (AR100, INV, ORD, PAY).
+        self._add_typed_reference_edges(entities)
+
+        # ── Heuristic cross-file name resolution (all languages) ──────────────
+        # Group entities by their *definition* names. A short-name floor guards
+        # against false positives from common tokens in normal source, but it is
+        # relaxed for regex-parsed (IBM i) entities whose names are short by
+        # convention.
         entity_nodes_by_name: Dict[str, List[str]] = defaultdict(list)
         for entity in entities:
-            if entity.name and len(entity.name) >= 4:
+            if not entity.name or entity.type == "import":
+                continue
+            if len(entity.name) >= 4 or self._is_regex_parsed(entity):
                 entity_node_id = f"{entity.type}:{entity.file_path}:{entity.name}:{entity.start_line}"
                 entity_nodes_by_name[entity.name].append(entity_node_id)
 
@@ -62,6 +75,9 @@ class GraphBuilder:
                     continue
                 for target_id in entity_nodes_by_name[word]:
                     if target_id != entity_node_id:
+                        # Don't overwrite a precise typed edge with a generic one.
+                        if self.graph.has_edge(entity_node_id, target_id):
+                            continue
                         self.graph.add_edge(
                             entity_node_id,
                             target_id,
@@ -71,6 +87,79 @@ class GraphBuilder:
                         )
 
         return self.graph
+
+    @staticmethod
+    def _is_regex_parsed(entity) -> bool:
+        return bool(getattr(entity, "metadata", None)) and entity.metadata.get("parser") == "regex"
+
+    # ref_kind on the import entity -> edge relation on the graph
+    _REF_KIND_RELATION = {"call": "CALLS", "copy": "COPIES", "file": "DECLARES_FILE"}
+
+    def _add_typed_reference_edges(self, entities: List[ParsedEntity]) -> None:
+        """Emit CALLS / COPIES / DECLARES_FILE edges from tagged import entities.
+
+        Source of the edge is the enclosing program/definition in the same file
+        when one exists (e.g. the PROGRAM-ID class, or the sole procedure),
+        otherwise the file node. Target is every same-named definition anywhere
+        in the graph — this is what produces cross-file / cross-language edges.
+        """
+        # Index definitions (call/copy targets) by name — no length floor.
+        defs_by_name: Dict[str, List[str]] = defaultdict(list)
+        for e in entities:
+            if e.name and e.type in ("class", "function"):
+                node_id = f"{e.type}:{e.file_path}:{e.name}:{e.start_line}"
+                defs_by_name[e.name].append(node_id)
+
+        # Index files by their stem (uppercased). IBM i COPY/CALL/DCLF frequently
+        # target a *member* — e.g. `COPY EMPREC` -> EMPREC.cpy, `CALL PGM(ORD)` ->
+        # ORD.rpgle, `DCLF FILE(CUSTF)` -> CUSTF.* — so we resolve against file
+        # stems in addition to in-source definition symbols.
+        files_by_stem: Dict[str, str] = {}
+        for e in entities:
+            stem = Path(e.file_path).stem.upper()
+            files_by_stem.setdefault(stem, f"file:{e.file_path}")
+
+        # For each file, pick a representative source node: prefer a class
+        # (PROGRAM-ID / CL PGM), else the first function, else the file node.
+        source_by_file: Dict[str, str] = {}
+        for e in entities:
+            if e.type == "class":
+                source_by_file[e.file_path] = f"class:{e.file_path}:{e.name}:{e.start_line}"
+        for e in entities:
+            if e.file_path not in source_by_file and e.type == "function":
+                source_by_file[e.file_path] = f"function:{e.file_path}:{e.name}:{e.start_line}"
+
+        for e in entities:
+            if e.type != "import":
+                continue
+            ref_kind = (getattr(e, "metadata", None) or {}).get("ref_kind")
+            relation = self._REF_KIND_RELATION.get(ref_kind)
+            if relation is None:
+                continue
+
+            source_id = source_by_file.get(e.file_path, f"file:{e.file_path}")
+
+            # Resolve targets: same-named definitions first, then a file-stem
+            # fallback (member reference). De-dup so a symbol whose file also
+            # matches the stem doesn't create two edges to effectively the same
+            # place.
+            targets = list(defs_by_name.get(e.name, []))
+            if not targets:
+                stem_target = files_by_stem.get(e.name.upper())
+                if stem_target is not None:
+                    targets.append(stem_target)
+
+            for target_id in targets:
+                if target_id == source_id or not self.graph.has_node(target_id):
+                    continue
+                self.graph.add_edge(
+                    source_id,
+                    target_id,
+                    relation=relation,
+                    source="regex",
+                    confidence=0.9,
+                    ref_line=e.start_line,
+                )
 
     def save_graph(self, path: str = ".nervapack/graph.graphml"):
         import os
