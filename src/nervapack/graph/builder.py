@@ -195,3 +195,58 @@ class GraphBuilder:
         if self.graph.has_node(file_node_id):
             nodes_to_remove.append(file_node_id)
         self.graph.remove_nodes_from(nodes_to_remove)
+
+
+def find_matching_nodes(graph: nx.DiGraph, target: str) -> List[str]:
+    """Return node IDs matching `target` by file path, name, or node ID.
+
+    Case-insensitive substring match — the same matching used by `explore`.
+    """
+    t = target.lower()
+    matches: List[str] = []
+    for node_id, data in graph.nodes(data=True):
+        file_path = data.get("file_path") or data.get("path", "")
+        if target in file_path:
+            matches.append(node_id)
+            continue
+        if t in (data.get("name", "") or "").lower():
+            matches.append(node_id)
+            continue
+        if target in node_id:
+            matches.append(node_id)
+    return matches
+
+
+def scoped_subgraph(graph: nx.DiGraph, target: str, hops: int = 2):
+    """Extract the N-hop neighbourhood around nodes matching `target`.
+
+    Returns (subgraph, matched_node_ids). The subgraph is an undirected-style
+    ego network — it follows both successors (callees/definitions) and
+    predecessors (callers) so you see what a program calls *and* who calls it.
+    Returns (empty_graph, []) when nothing matches.
+    """
+    from collections import deque
+
+    seeds = find_matching_nodes(graph, target)
+    if not seeds:
+        return nx.DiGraph(), []
+
+    keep: Set[str] = set(seeds)
+    for seed in seeds:
+        visited: Set[str] = set()
+        queue = deque([(seed, 0)])
+        while queue:
+            current, depth = queue.popleft()
+            if current in visited or depth > hops:
+                continue
+            visited.add(current)
+            keep.add(current)
+            if depth < hops:
+                for nb in graph.successors(current):
+                    if nb not in visited:
+                        queue.append((nb, depth + 1))
+                for nb in graph.predecessors(current):
+                    if nb not in visited:
+                        queue.append((nb, depth + 1))
+
+    return graph.subgraph(keep).copy(), seeds

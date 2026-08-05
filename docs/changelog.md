@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.6] - 2026-08-05
+
+### Added
+- **`visualize --scope <target> [--hops N]`** — render just the neighborhood around a program, copybook, file, or node instead of the whole graph. Follows both callers and callees (default 2 hops), the practical way to navigate a large estate. Scoped views are small, so physics stays enabled and output defaults to `.nervapack/scope_<target>.html` (never clobbering the full-graph file). Reuses the same matching as `explore`.
+
+---
+
 ## [0.7.5] - 2026-08-05
 
 ### Fixed

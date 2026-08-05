@@ -546,13 +546,20 @@ def visualize(
     no_browser: bool = typer.Option(False, "--no-browser", help="Don't open browser automatically"),
     enhanced: bool = typer.Option(False, "--enhanced", help="Enable enhanced features (search, community detection)"),
     communities: bool = typer.Option(False, "--communities", help="Enable community detection and color coding"),
+    scope: str = typer.Option(None, "--scope", help="Only visualize the neighborhood around this file/name/node (e.g. a program name)"),
+    hops: int = typer.Option(2, "--hops", help="Neighborhood depth when --scope is given (callers + callees)"),
 ):
     """
     Render the knowledge graph as an interactive HTML visualization.
+
+    Use --scope to focus on one program and its N-hop neighborhood — the right
+    way to navigate a large estate:
+
+        nervapack visualize --scope PAYROLL --hops 2
     """
     import webbrowser
     import os
-    from nervapack.graph.builder import GraphBuilder
+    from nervapack.graph.builder import GraphBuilder, scoped_subgraph
 
     try:
         builder = GraphBuilder()
@@ -560,6 +567,23 @@ def visualize(
     except Exception as e:
         console.print(f"[bold red]No graph found:[/bold red] {e}. Run 'nervapack ingest' first.")
         raise typer.Exit(1)
+
+    # Scope down to a program's neighborhood if requested.
+    if scope:
+        subgraph, seeds = scoped_subgraph(graph, scope, hops)
+        if not seeds:
+            console.print(f"[yellow]No nodes match '[cyan]{scope}[/cyan]'.[/yellow] "
+                          "Try a program/copybook name, a file path, or part of a node ID.")
+            raise typer.Exit(1)
+        graph = subgraph
+        console.print(
+            f"[cyan]Scope:[/cyan] '{scope}' — {len(seeds)} seed(s), "
+            f"{hops}-hop neighborhood (callers + callees)."
+        )
+        # Default the output name to the scope so scoped views don't clobber the full graph.
+        if output == ".nervapack/graph.html":
+            safe = "".join(c if c.isalnum() else "_" for c in scope)[:50]
+            output = f".nervapack/scope_{safe}.html"
 
     node_count = graph.number_of_nodes()
     edge_count = graph.number_of_edges()

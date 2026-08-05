@@ -28,9 +28,30 @@ Two rendering modes are available:
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--output PATH` | `.nervapack/graph.html` | Where to save the HTML file |
+| `--scope TARGET` | (none) | Only render the neighborhood around a file/name/node (e.g. a program name). Physics stays on for these small, readable views. |
+| `--hops N` | `2` | Neighborhood depth when `--scope` is given — follows both callers and callees |
 | `--enhanced` | off | Enable real-time search + path finder |
 | `--communities` | off | Enable Louvain community detection + colour coding |
 | `--no-browser` | off | Generate without auto-opening the browser |
+
+### Scoping large estates
+
+For a big graph (thousands of nodes), rendering the whole thing is rarely
+readable — `--scope` is the way to navigate it. It extracts the N-hop
+neighborhood around the matched node(s), following **both directions** so you
+see what a program calls *and* who calls it:
+
+```bash
+# PAYROLL, its callers, and its callees (2 hops)
+nervapack visualize --scope PAYROLL --hops 2
+
+# Just the immediate neighbors of a copybook
+nervapack visualize --scope EMPREC --hops 1
+```
+
+Scoped output defaults to `.nervapack/scope_<TARGET>.html` so it never clobbers
+the full-graph file. Because scoped views are small, physics stays enabled for a
+proper interactive layout.
 
 ---
 
