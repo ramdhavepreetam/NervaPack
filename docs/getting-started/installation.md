@@ -115,7 +115,8 @@ Installs all optional features (metrics, dashboard, MCP, cloud LLMs).
 
 ## Additional Language Support
 
-NervaPack bundles Python, JavaScript, and TypeScript support. Add more languages:
+NervaPack bundles Python, JavaScript, and TypeScript support. Add more
+tree-sitter languages:
 
 ```bash
 # Individual languages
@@ -130,6 +131,22 @@ pip install "nervapack[csharp]"  # C#
 # All languages at once
 pip install "nervapack[all-languages]"
 ```
+
+### IBM i / mainframe (RPG, CL, COBOL) — no extra needed
+
+Since **v0.7.0**, NervaPack also indexes the IBM i / mainframe stack out of the
+box — **no extra to install and no grammar to compile**:
+
+| Language | Extensions |
+|---|---|
+| RPG | `.rpgle`, `.rpg`, `.sqlrpgle` |
+| CL | `.clle`, `.clp`, `.cl` |
+| COBOL | `.cbl`, `.cob`, `.cobol`, `.cpy` |
+
+These use a pure-Python extractor (not tree-sitter), so they work offline and
+in air-gapped environments with zero dependencies. `CALL`, `COPY`, and file
+declarations become typed, cross-file dependency edges. See
+[IBM i Languages](../user-guide/concepts/ibm-i-languages.md) for details.
 
 ---
 

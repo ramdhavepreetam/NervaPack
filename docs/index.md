@@ -144,6 +144,10 @@ nervapack visualize --enhanced --communities
 
 **Bundled** (no extra install):
 - Python, JavaScript, JSX, TypeScript, TSX
+- **IBM i / mainframe** — RPG (`.rpgle`/`.rpg`/`.sqlrpgle`), CL
+  (`.clle`/`.clp`/`.cl`), COBOL (`.cbl`/`.cob`/`.cobol`/`.cpy`), with typed
+  `CALL`/`COPY` dependency edges. See
+  [IBM i Languages](user-guide/concepts/ibm-i-languages.md).
 
 **Optional extras**:
 ```bash

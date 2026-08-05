@@ -135,6 +135,7 @@ nav:
       - Knowledge Graphs: user-guide/concepts/knowledge-graphs.md
       - Architecture: user-guide/concepts/architecture.md
       - Token Efficiency: user-guide/concepts/token-efficiency.md
+      - IBM i Languages (RPG/CL/COBOL): user-guide/concepts/ibm-i-languages.md
     - Commands:
       - ingest: user-guide/commands/ingest.md
       - query: user-guide/commands/query.md

@@ -44,10 +44,18 @@ Persisted at `.nervapack/graph.graphml`.
 
 **Edge types:**
 
-| Relation | From → To | Meaning |
-|---|---|---|
-| `DEFINES` | `file` → `function/class/import` | The file declares this entity |
-| `EXPLAINS` | `markdown` → `function/class` | Docs semantically describe this entity (LLM-drawn) |
+| Relation | From → To | Source | Meaning |
+|---|---|---|---|
+| `DEFINES` | `file` → `function/class/import` | ast | The file declares this entity |
+| `EXPLAINS` | `markdown` → `function/class` | llm | Docs semantically describe this entity (LLM-drawn) |
+| `REFERENCES` | `entity` → `entity` | heuristic | Name-overlap match (confidence 0.7) |
+| `CALLS` | `program/proc` → `program/proc` | regex | IBM i `CALL`/`CALLP`/`CALLPRC` (confidence 0.9, `ref_line` set) |
+| `COPIES` | `program` → `copybook/member` | regex | IBM i `/copy` / COBOL `COPY` |
+| `DECLARES_FILE` | `program` → `file` | regex | CL `DCLF FILE(...)` |
+
+The `CALLS` / `COPIES` / `DECLARES_FILE` edges are emitted for the IBM i /
+mainframe languages (RPG, CL, COBOL) and resolve cross-file and cross-language.
+See [IBM i Languages](user-guide/concepts/ibm-i-languages.md).
 
 ### Vector Store (ChromaDB)
 
