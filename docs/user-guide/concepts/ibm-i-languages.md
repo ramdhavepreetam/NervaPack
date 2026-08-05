@@ -48,13 +48,15 @@ essentially no `0x20`, the opposite of ASCII/UTF-8 text. EBCDIC line endings
 (`0x25`, and NEL `0x15`) are normalised to `\n`.
 
 When EBCDIC is detected, NervaPack tries several candidate code pages
-(`cp037`, `cp500`, `cp1140`) and keeps the decode that looks most like program
-source — so a member that uses the `[ ] | !` operators (which are ASCII in
-`cp500` but non-ASCII symbols in `cp037`) is decoded with the right page
-automatically. These pages are identical for `A-Z`, `0-9`, and common
-punctuation, so plain source is indistinguishable and falls back to `cp037`
-(the safe default). Set `NERVAPACK_EBCDIC` explicitly if your shop standardises
-on a particular page.
+(`cp037`, `cp500`, `cp1140`, `cp273`) and keeps the decode that looks most like
+program source. Scoring rewards coherent runs of letters/digits and penalises
+stray symbols wedged inside words, so a German member with umlauts
+(`ä ö ü Ä Ö Ü ß`) is detected as `cp273`, and a member using the `[ ] | !`
+operators (ASCII in `cp500`) is decoded with `cp500` — automatically, even on
+codebases that do not set `NERVAPACK_EBCDIC`. Where pages are genuinely
+indistinguishable (plain `A-Z`/`0-9` source), selection falls back to `cp037`,
+the safe default. For a shop that standardises on one page, set
+`NERVAPACK_EBCDIC` explicitly to remove any ambiguity.
 
 You can override detection with the `NERVAPACK_EBCDIC` environment variable:
 

@@ -33,7 +33,7 @@ DEFAULT_EBCDIC_CODEC = "cp037"
 # in a few symbols — e.g. cp1140 places the euro sign where cp037 has the
 # international-currency sign. When decodes tie on the source-likeness score,
 # the earlier entry wins, so cp037 remains the safe default.
-_EBCDIC_CANDIDATE_CODECS = ("cp037", "cp500", "cp1140")
+_EBCDIC_CANDIDATE_CODECS = ("cp037", "cp500", "cp1140", "cp273")
 
 # Extensions that may plausibly be EBCDIC. Detection is only attempted for these
 # so we never mis-decode a modern UTF-8 file with unusual byte statistics.
@@ -91,22 +91,38 @@ def looks_like_ebcdic(sample: bytes) -> bool:
 
 
 def _source_likeness(text: str) -> float:
-    """Fraction of characters that are plausible in program source.
+    """Score how much a decode looks like real program source.
 
-    Used to choose among candidate EBCDIC code pages: the decode that yields the
-    most letters/digits/common-punctuation/whitespace (and fewest exotic symbols
-    or controls) is the most likely correct one.
+    Used to choose among candidate EBCDIC code pages. A *correct* decode yields
+    coherent words — unbroken runs of letters/digits — whereas a wrong code page
+    scatters stray symbols into the middle of those runs (e.g. `GEH[LTER` or
+    `GEH¢LTER` instead of `GEHÄLTER`). So we reward alphanumerics and, crucially,
+    **penalise any non-alphanumeric symbol wedged between two word characters** —
+    that adjacency is the tell-tale sign of a mis-decode and is what distinguishes
+    otherwise-similar pages such as cp273 vs cp500.
     """
     if not text:
         return 0.0
-    good = 0
-    for ch in text:
-        o = ord(ch)
-        if ch.isalnum() or ch.isspace():
-            good += 1
-        elif 0x20 <= o <= 0x7E:  # printable ASCII punctuation
-            good += 1
-    return good / len(text)
+    # Punctuation that is legitimately part of / adjacent to tokens in COBOL/RPG
+    # source (subscripts, qualifiers, statement terminators) — never penalised.
+    token_punct = set("[]().,;:-_'\"")
+    score = 0.0
+    n = len(text)
+    for i, ch in enumerate(text):
+        if ch.isalnum():
+            score += 1.0
+        elif ch.isspace():
+            score += 0.5
+        elif ch in token_punct:
+            score += 0.5
+        elif ord(ch) <= 0x7E:  # other ASCII punctuation
+            prev_word = i > 0 and text[i - 1].isalnum()
+            next_word = i + 1 < n and text[i + 1].isalnum()
+            # A stray symbol wedged inside a word signals a wrong code page.
+            score += -1.0 if (prev_word and next_word) else 0.25
+        else:  # non-ASCII, non-letter symbol (¢ ¬ ¦ …) — likely mis-decode
+            score += -1.0
+    return score / n
 
 
 def _best_ebcdic_codec(sample: bytes) -> str:

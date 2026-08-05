@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.4] - 2026-08-05
+
+### Changed
+- **EBCDIC auto-detection adds `cp273` (Germany/Austria) and smarter scoring.** The candidate set is now `cp037`, `cp500`, `cp1140`, `cp273`. Code-page selection now rewards coherent letter/digit runs and penalises stray symbols wedged inside words, so a German member with umlauts (`ä ö ü Ä Ö Ü ß`) is correctly detected as `cp273` while US members stay `cp037` — even on codebases that do not set `NERVAPACK_EBCDIC`. Ambiguous plain source still falls back to `cp037`; `NERVAPACK_EBCDIC=<codec>` still forces a specific page.
+
+---
+
 ## [0.7.3] - 2026-08-05
 
 ### Changed
