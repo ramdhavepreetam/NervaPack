@@ -9,6 +9,8 @@ from pathlib import Path
 from nervapack.parser.encoding import (
     looks_like_ebcdic,
     read_source_text,
+    _best_ebcdic_codec,
+    _EBCDIC_CANDIDATE_CODECS,
     DEFAULT_EBCDIC_CODEC,
 )
 from nervapack.parser.ast_parser import scan_directory
@@ -59,6 +61,28 @@ class TestReadSourceText(unittest.TestCase):
 
     def test_default_codec_is_cp037(self):
         self.assertEqual(DEFAULT_EBCDIC_CODEC, "cp037")
+
+
+class TestCandidateCodecs(unittest.TestCase):
+    def test_candidate_set_includes_cp500_and_cp1140(self):
+        self.assertIn("cp500", _EBCDIC_CANDIDATE_CODECS)
+        self.assertIn("cp1140", _EBCDIC_CANDIDATE_CODECS)
+
+    def test_cp037_is_first_and_default(self):
+        self.assertEqual(_EBCDIC_CANDIDATE_CODECS[0], "cp037")
+        self.assertEqual(DEFAULT_EBCDIC_CODEC, "cp037")
+
+    def test_plain_source_defaults_to_cp037_on_tie(self):
+        # A/Z/0-9/space/common punctuation coincide across the pages, so plain
+        # COBOL is indistinguishable and must fall back to the first candidate.
+        for codec in _EBCDIC_CANDIDATE_CODECS:
+            self.assertEqual(_best_ebcdic_codec(_COBOL.encode(codec)), "cp037")
+
+    def test_cp500_chosen_when_its_operators_present(self):
+        # Bytes 0x4A/0x4F/0x5A decode to '[' '!' ']' in cp500 but to non-ASCII
+        # symbols in cp037; a bracket/operator-heavy member should pick cp500.
+        line = ("       IF X[1] = Y | Z THEN\n" * 4) + "       PROGRAM-ID. T.\n"
+        self.assertEqual(_best_ebcdic_codec(line.encode("cp500")), "cp500")
 
 
 class TestEndToEnd(unittest.TestCase):

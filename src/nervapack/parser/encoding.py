@@ -28,6 +28,13 @@ from typing import Optional
 # override. cp037 is by far the most common for US/Canada mainframe source.
 DEFAULT_EBCDIC_CODEC = "cp037"
 
+# Code pages tried during auto-detection, in preference order. They are very
+# similar (A-Z, 0-9, and common source punctuation coincide), differing mainly
+# in a few symbols — e.g. cp1140 places the euro sign where cp037 has the
+# international-currency sign. When decodes tie on the source-likeness score,
+# the earlier entry wins, so cp037 remains the safe default.
+_EBCDIC_CANDIDATE_CODECS = ("cp037", "cp500", "cp1140")
+
 # Extensions that may plausibly be EBCDIC. Detection is only attempted for these
 # so we never mis-decode a modern UTF-8 file with unusual byte statistics.
 _EBCDIC_CANDIDATE_EXTS = {
@@ -83,6 +90,45 @@ def looks_like_ebcdic(sample: bytes) -> bool:
     return True
 
 
+def _source_likeness(text: str) -> float:
+    """Fraction of characters that are plausible in program source.
+
+    Used to choose among candidate EBCDIC code pages: the decode that yields the
+    most letters/digits/common-punctuation/whitespace (and fewest exotic symbols
+    or controls) is the most likely correct one.
+    """
+    if not text:
+        return 0.0
+    good = 0
+    for ch in text:
+        o = ord(ch)
+        if ch.isalnum() or ch.isspace():
+            good += 1
+        elif 0x20 <= o <= 0x7E:  # printable ASCII punctuation
+            good += 1
+    return good / len(text)
+
+
+def _best_ebcdic_codec(sample: bytes) -> str:
+    """Pick the candidate EBCDIC code page whose decode looks most like source.
+
+    All EBCDIC codecs map every byte, so decoding never raises; we score the
+    results instead. Ties resolve to the earliest (most common) candidate, so
+    cp037 stays the default when pages are indistinguishable for this file.
+    """
+    best_codec = _EBCDIC_CANDIDATE_CODECS[0]
+    best_score = -1.0
+    for codec in _EBCDIC_CANDIDATE_CODECS:
+        try:
+            score = _source_likeness(sample.decode(codec))
+        except (LookupError, UnicodeDecodeError):
+            continue
+        if score > best_score:  # strict '>' keeps earlier candidate on a tie
+            best_score = score
+            best_codec = codec
+    return best_codec
+
+
 def _resolve_codec(ext: str, raw: bytes) -> Optional[str]:
     """Return the EBCDIC codec to use, or None to read as UTF-8."""
     override = _env_override()
@@ -97,8 +143,9 @@ def _resolve_codec(ext: str, raw: bytes) -> Optional[str]:
 
     if ext.lower() not in _EBCDIC_CANDIDATE_EXTS:
         return None
-    if looks_like_ebcdic(raw[:_SAMPLE_BYTES]):
-        return DEFAULT_EBCDIC_CODEC
+    sample = raw[:_SAMPLE_BYTES]
+    if looks_like_ebcdic(sample):
+        return _best_ebcdic_codec(sample)
     return None
 
 

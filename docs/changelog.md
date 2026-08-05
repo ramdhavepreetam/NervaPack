@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.3] - 2026-08-05
+
+### Changed
+- **EBCDIC auto-detection now tries multiple code pages.** When EBCDIC is detected, NervaPack decodes with each of `cp037`, `cp500`, and `cp1140` and keeps the result that looks most like program source. This correctly handles members using the `[ ] | !` operators (ASCII in `cp500`, non-ASCII symbols in `cp037`). The pages are identical for `A-Z`/`0-9`/common punctuation, so plain source ties and falls back to `cp037` (unchanged default). `NERVAPACK_EBCDIC=<codec>` still forces a specific page.
+
+---
+
 ## [0.7.2] - 2026-08-05
 
 ### Added
