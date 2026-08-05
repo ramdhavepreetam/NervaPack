@@ -3,8 +3,8 @@ class Nervapack < Formula
   homepage "https://github.com/ramdhavepreetam/NervaPack"
   # Use the canonical "Source" URL from https://pypi.org/project/nervapack/#files
   # (brew audit rejects the /packages/source/ redirect form).
-  url "https://files.pythonhosted.org/packages/b2/26/15637555258b8afa036894a8967235555a706076cc845edc4da1a4f653b3/nervapack-0.7.2.tar.gz"
-  sha256 "e55853a0691548b759ed4b568e74a37a0a0c2394c620e3ab207ac03ad4069334"
+  url "https://files.pythonhosted.org/packages/bd/57/ccb9e520eba0d8e8dd33bd52ec6375a53ae69e0fbf049b87e9fc58b6d89b/nervapack-0.7.3.tar.gz"
+  sha256 "e91bd0a797f635b94492153e5481c934d496d2e2ee6480e670311b4274fb2cf0"
   license "MIT"
 
   depends_on "python@3.12"
