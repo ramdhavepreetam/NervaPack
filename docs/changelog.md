@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.5] - 2026-08-05
+
+### Fixed
+- **`visualize` hung on large graphs.** Interactive force-directed physics never stabilises for graphs with thousands of nodes / hundreds of thousands of edges — the browser pinned the CPU indefinitely (e.g. a 21k-node / 400k-edge IBM i estate). `visualize` now **disables physics above ~2,000 nodes** (rendering a static layout instantly) and **caps the view to the most-connected core** (default top ~3,000 nodes / ~8,000 edges), reporting how much of the total was shown. The full graph is unchanged in `.nervapack/graph.graphml`; use `explore`/`query` to navigate all of it.
+
+### Internal
+- Test suite is now hermetic with respect to `NERVAPACK_EBCDIC` — a shop-default env var no longer affects ASCII fixtures.
+
+---
+
 ## [0.7.4] - 2026-08-05
 
 ### Changed

@@ -115,9 +115,25 @@ Opened in browser.
 
 ## Performance notes
 
-For graphs with > 5,000 nodes, the browser layout can be slow to settle. In that case:
-- Use `nervapack explore <target>` to generate a focused subgraph visualization instead.
-- Or use `--no-browser` to generate the file and open it manually after the physics have settled.
+Interactive force-directed physics only stays responsive for a couple of
+thousand nodes. NervaPack handles large graphs automatically:
+
+- **Above ~2,000 nodes, physics is disabled** — the browser renders a static
+  layout immediately instead of running an unbounded force simulation that
+  never settles and pins the CPU.
+- **Very large graphs are capped** to the most-connected core (by default the
+  top ~3,000 nodes / ~8,000 edges). Selecting highest-degree nodes keeps the
+  structurally important hubs — heavily-called programs, shared copybooks — and
+  the command prints exactly how many of the total were shown.
+
+The full graph is always preserved in `.nervapack/graph.graphml`; capping only
+affects the HTML view. To navigate the whole graph at scale:
+
+- Use `nervapack explore <target>` for a focused subgraph around one entity.
+- Use `nervapack query` / the MCP tools to traverse programmatically.
+
+This is expected for large mainframe estates — a 20k-node / 400k-edge graph is
+not meant to be read as a single hairball; scoped views are how you navigate it.
 
 ---
 

@@ -56,13 +56,59 @@ def _short_label(node_id: str, data: dict) -> str:
     return node_id.split(":")[-1][:25]
 
 
-def export_html(graph: nx.DiGraph, output_path: str) -> None:
+# Above this many nodes, in-browser force-directed physics never stabilises and
+# pins the CPU, so we disable it and render a static layout instead.
+_PHYSICS_NODE_LIMIT = 2000
+
+# Hard caps on what we hand the browser. A 400k-edge canvas is unusable even
+# with physics off, so we render the most-connected core and note the rest.
+_MAX_NODES = 3000
+_MAX_EDGES = 8000
+
+
+def _cap_graph(graph: nx.DiGraph, max_nodes: int, max_edges: int):
+    """Return a subgraph of the most-connected nodes, plus a summary dict.
+
+    Selecting highest-degree nodes keeps the structurally important hubs
+    (heavily-called programs, shared copybooks) rather than an arbitrary slice.
+    """
+    n, e = graph.number_of_nodes(), graph.number_of_edges()
+    if n <= max_nodes and e <= max_edges:
+        return graph, None
+
+    # Keep the top-degree nodes.
+    degrees = sorted(graph.degree, key=lambda kv: kv[1], reverse=True)
+    keep = {node for node, _ in degrees[:max_nodes]}
+    sub = graph.subgraph(keep).copy()
+
+    # If still over the edge cap, drop lowest-weight/oldest edges deterministically.
+    if sub.number_of_edges() > max_edges:
+        edges = list(sub.edges())[max_edges:]
+        sub.remove_edges_from(edges)
+
+    return sub, {
+        "total_nodes": n, "total_edges": e,
+        "shown_nodes": sub.number_of_nodes(), "shown_edges": sub.number_of_edges(),
+    }
+
+
+def export_html(graph: nx.DiGraph, output_path: str,
+                max_nodes: int = _MAX_NODES, max_edges: int = _MAX_EDGES) -> Optional[dict]:
+    """Render the graph to an interactive HTML file.
+
+    For large graphs, physics is disabled (so the browser doesn't run an
+    unbounded force simulation) and the view is capped to the most-connected
+    core. Returns a summary dict when capping occurred, else None.
+    """
     try:
         from pyvis.network import Network
     except ImportError:
         raise ImportError("pyvis is required for visualization. Run: pip install pyvis")
 
     os.makedirs(Path(output_path).parent, exist_ok=True)
+
+    graph, cap_info = _cap_graph(graph, max_nodes, max_edges)
+    physics_on = graph.number_of_nodes() <= _PHYSICS_NODE_LIMIT
 
     net = Network(
         height="92vh",
@@ -80,7 +126,11 @@ def export_html(graph: nx.DiGraph, output_path: str) -> None:
 
     net.set_options(json.dumps({
         "physics": {
-            "enabled": True,
+            # Disabled for large graphs: a live force simulation over thousands
+            # of nodes / hundreds of thousands of edges never stabilises in the
+            # browser and pins the CPU. With physics off, vis.js lays nodes out
+            # once and renders immediately.
+            "enabled": physics_on,
             "solver": "forceAtlas2Based",
             "forceAtlas2Based": {
                 "gravitationalConstant": -60,
@@ -178,3 +228,5 @@ def export_html(graph: nx.DiGraph, output_path: str) -> None:
     html = html.replace("</body>", legend_html + "\n</body>")
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(html)
+
+    return cap_info

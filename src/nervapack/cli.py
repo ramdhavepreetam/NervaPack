@@ -583,7 +583,19 @@ def visualize(
         )
     else:
         from nervapack.graph.visualizer import export_html
-        export_html(graph, output)
+        cap_info = export_html(graph, output)
+        if cap_info:
+            console.print(
+                f"[yellow]Large graph:[/yellow] showing the "
+                f"{cap_info['shown_nodes']} most-connected nodes / "
+                f"{cap_info['shown_edges']} edges "
+                f"(of {cap_info['total_nodes']} nodes, {cap_info['total_edges']} edges). "
+                f"Physics is disabled for speed."
+            )
+            console.print(
+                "[dim]Tip: the full graph is still in .nervapack/graph.graphml. "
+                "Use 'nervapack explore'/'query' to navigate the whole graph.[/dim]"
+            )
 
     abs_path = os.path.abspath(output)
     console.print(f"[bold green]Visualization saved:[/bold green] {abs_path}")

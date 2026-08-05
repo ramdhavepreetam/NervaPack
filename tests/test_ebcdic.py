@@ -15,6 +15,22 @@ from nervapack.parser.encoding import (
 )
 from nervapack.parser.ast_parser import scan_directory
 
+# These tests assert on auto-detection behaviour, so they must not be influenced
+# by a developer's ambient NERVAPACK_EBCDIC (e.g. a shop default of cp273).
+# Neutralise it for the module; TestOverride sets it explicitly per-test.
+_SAVED_EBCDIC = None
+
+
+def setUpModule():
+    global _SAVED_EBCDIC
+    _SAVED_EBCDIC = os.environ.pop("NERVAPACK_EBCDIC", None)
+
+
+def tearDownModule():
+    if _SAVED_EBCDIC is not None:
+        os.environ["NERVAPACK_EBCDIC"] = _SAVED_EBCDIC
+
+
 _COBOL = (
     "       IDENTIFICATION DIVISION.\n"
     "       PROGRAM-ID. PAYROLL.\n"

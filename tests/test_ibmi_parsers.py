@@ -23,6 +23,20 @@ from nervapack.parser.regex_extractors import (
 )
 from nervapack.graph.builder import GraphBuilder
 
+# Fixtures here are ASCII; a developer's ambient NERVAPACK_EBCDIC (e.g. a shop
+# default of cp273) would force EBCDIC decoding and corrupt them. Neutralise it.
+_SAVED_EBCDIC = None
+
+
+def setUpModule():
+    global _SAVED_EBCDIC
+    _SAVED_EBCDIC = os.environ.pop("NERVAPACK_EBCDIC", None)
+
+
+def tearDownModule():
+    if _SAVED_EBCDIC is not None:
+        os.environ["NERVAPACK_EBCDIC"] = _SAVED_EBCDIC
+
 
 def _by_type(entities, kind):
     return sorted(e.name for e in entities if e.type == kind)
