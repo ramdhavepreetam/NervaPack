@@ -153,6 +153,25 @@ class TestOverride(unittest.TestCase):
             # Must not raise; falls back to utf-8.
             self.assertIn("PROGRAM-ID. PAYROLL.", read_source_text(p))
 
+    def test_forced_codec_leaves_non_mainframe_files_untouched(self):
+        # Regression: a forced code page must only apply to mainframe-source
+        # extensions. Otherwise an ambient shop default (e.g. cp273 in the MCP
+        # env) corrupts every ordinary ASCII/UTF-8 file — .py, .md, .js — by
+        # decoding it as EBCDIC. Forcing a page means "use THIS page for EBCDIC
+        # members", not "treat the whole tree as EBCDIC".
+        os.environ["NERVAPACK_EBCDIC"] = "cp273"
+        src = "def hello():\n    return 'world'\n"
+        with tempfile.TemporaryDirectory() as d:
+            p = _write(d, "mod.py", src, "utf-8")
+            self.assertEqual(read_source_text(p), src)
+
+    def test_forced_codec_still_applies_to_mainframe_files(self):
+        # The forced page must still take effect for a genuine EBCDIC member.
+        os.environ["NERVAPACK_EBCDIC"] = "cp037"
+        with tempfile.TemporaryDirectory() as d:
+            p = _write(d, "PAY.cbl", _COBOL, "cp037")
+            self.assertIn("PROGRAM-ID. PAYROLL.", read_source_text(p))
+
 
 if __name__ == "__main__":
     unittest.main()

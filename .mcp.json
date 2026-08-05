@@ -4,7 +4,7 @@
       "command": "nervapack-mcp",
       "description": "NervaPack knowledge graph (v0.6.0) — query, graph_status, explore, impact",
       "env": {
-        "NERVAPACK_EBCDIC": "cp273"
+        "NERVAPACK_EBCDIC": "auto"
       }
     },
     "nervapack-memory": {

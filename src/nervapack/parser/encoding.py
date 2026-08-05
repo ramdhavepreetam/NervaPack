@@ -10,8 +10,10 @@ Detection can be overridden with the ``NERVAPACK_EBCDIC`` environment variable:
 
 - ``NERVAPACK_EBCDIC=auto`` (or unset) — heuristic detection (default).
 - ``NERVAPACK_EBCDIC=cp037`` (or any codec name) — force this EBCDIC code page
-  for every file, skipping detection. Useful for corporate / air-gapped shops
-  that know their members are a specific code page.
+  for mainframe-source files, skipping heuristic detection. Only files with a
+  known IBM i / mainframe extension (COBOL, RPG, CL, copybooks) are affected;
+  ordinary ASCII/UTF-8 source (``.py``, ``.md``, …) is never touched. Useful for
+  corporate / air-gapped shops that know their members are a specific code page.
 - ``NERVAPACK_EBCDIC=off`` — disable EBCDIC entirely; always read as UTF-8.
 
 Common EBCDIC code pages: ``cp037`` (US/Canada — the usual default),
@@ -148,6 +150,7 @@ def _best_ebcdic_codec(sample: bytes) -> str:
 def _resolve_codec(ext: str, raw: bytes) -> Optional[str]:
     """Return the EBCDIC codec to use, or None to read as UTF-8."""
     override = _env_override()
+    forced_codec: Optional[str] = None
     if override:
         low = override.lower()
         if low in ("off", "none", "false", "0"):
@@ -155,10 +158,19 @@ def _resolve_codec(ext: str, raw: bytes) -> Optional[str]:
         if low in ("auto", "detect", "1", "true"):
             pass  # fall through to detection
         else:
-            return override  # explicit codec name, e.g. "cp037"
+            forced_codec = override  # explicit codec name, e.g. "cp037"
 
+    # EBCDIC only ever applies to mainframe source extensions. This gate is
+    # deliberately shared by the forced-codec path: forcing a code page means
+    # "decode EBCDIC-candidate members with *this* page instead of auto-picking",
+    # NOT "decode every .py/.md/.js in the tree as EBCDIC" (which would corrupt
+    # ordinary ASCII/UTF-8 source).
     if ext.lower() not in _EBCDIC_CANDIDATE_EXTS:
         return None
+
+    if forced_codec:
+        return forced_codec
+
     sample = raw[:_SAMPLE_BYTES]
     if looks_like_ebcdic(sample):
         return _best_ebcdic_codec(sample)
