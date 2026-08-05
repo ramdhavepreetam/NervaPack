@@ -161,9 +161,27 @@ class GraphBuilder:
                     ref_line=e.start_line,
                 )
 
+    # XML 1.0 forbids C0 control characters except tab/LF/CR. Legacy source
+    # (notably fixed-form RPG/COBOL and copybooks) can carry NUL bytes,
+    # form-feeds, and other control chars that would make write_graphml raise
+    # "All strings must be XML compatible". This is the last line of defense —
+    # it protects every language, whatever produced the attribute.
+    _XML_ILLEGAL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+    def _sanitize_for_graphml(self) -> None:
+        for _, data in self.graph.nodes(data=True):
+            for key, value in data.items():
+                if isinstance(value, str) and self._XML_ILLEGAL.search(value):
+                    data[key] = self._XML_ILLEGAL.sub("", value)
+        for _, _, data in self.graph.edges(data=True):
+            for key, value in data.items():
+                if isinstance(value, str) and self._XML_ILLEGAL.search(value):
+                    data[key] = self._XML_ILLEGAL.sub("", value)
+
     def save_graph(self, path: str = ".nervapack/graph.graphml"):
         import os
         os.makedirs(os.path.dirname(path), exist_ok=True)
+        self._sanitize_for_graphml()
         nx.write_graphml(self.graph, path)
 
     def load_graph(self, path: str = ".nervapack/graph.graphml"):

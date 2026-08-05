@@ -261,5 +261,37 @@ class TestTypedGraphEdges(unittest.TestCase):
                          {d.get("relation") for _, _, d in g.edges(data=True)})
 
 
+class TestXmlIncompatibleCharacters(unittest.TestCase):
+    """Legacy COBOL/RPG source with NUL bytes, form-feeds, and other control
+    characters must not break GraphML serialization."""
+
+    def test_control_chars_stripped_from_entities(self):
+        # Interior control chars in a paragraph name and a COPY target.
+        src = ("       PROGRAM-ID. PAY.\n"
+               "       PROCEDURE DIVISION.\n"
+               "       MAIN\x01PARA.\n"
+               "           COPY EMP\x00REC.\n")
+        ents = extract_cobol(src, "PAY.cbl")
+        for e in ents:
+            self.assertNotRegex(e.name, r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+            self.assertNotRegex(e.content, r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+    def test_form_feed_page_eject_saves(self):
+        # 0x0C (form-feed) is a common mainframe page-eject and is XML-illegal.
+        with tempfile.TemporaryDirectory() as d:
+            Path(d, "PAY.cbl").write_text(
+                "       PROGRAM-ID. PAY.\x0c\n"
+                "       PROCEDURE DIVISION.\n"
+                "       MAIN-PARA.\x00\n"
+                "           STOP RUN.\n")
+            b = GraphBuilder()
+            b.build_from_entities(scan_directory(d))
+            out = os.path.join(d, "g.graphml")
+            b.save_graph(out)  # must not raise
+            import networkx as nx
+            g2 = nx.read_graphml(out)  # must be valid, re-readable GraphML
+            self.assertGreater(g2.number_of_nodes(), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

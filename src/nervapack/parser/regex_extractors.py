@@ -21,6 +21,22 @@ from pathlib import Path
 from typing import List
 
 
+# Characters that are illegal in XML 1.0 (and therefore in GraphML, which is the
+# on-disk graph format). Legacy RPG/COBOL source — especially fixed-form and
+# copybooks — routinely contains NUL bytes, form-feed page-ejects (0x0C), and
+# other C0 control characters. Strip everything except tab (0x09), LF (0x0A),
+# and CR (0x0D), which XML permits.
+_XML_ILLEGAL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
+def _xml_safe(text: str) -> str:
+    """Remove XML-incompatible control characters so the entity can be
+    serialized to GraphML without raising ValueError at write time."""
+    if not text:
+        return text
+    return _XML_ILLEGAL.sub("", text)
+
+
 # ── Shared helpers ───────────────────────────────────────────────────────────
 
 def _mk(name, kind, file_path, start_line, end_line, content, lang, ref_kind=None):
@@ -35,12 +51,12 @@ def _mk(name, kind, file_path, start_line, end_line, content, lang, ref_kind=Non
     if ref_kind is not None:
         metadata["ref_kind"] = ref_kind
     return ParsedEntity(
-        name=name,
+        name=_xml_safe(name),
         type=kind,
         file_path=file_path,
         start_line=start_line,
         end_line=end_line,
-        content=content,
+        content=_xml_safe(content),
         metadata=metadata,
     )
 
