@@ -12,7 +12,10 @@ class Nervapack < Formula
   def install
     venv = virtualenv_create(libexec, "python3.12")
     venv.pip_install buildpath
-    bin.install_symlink libexec/"bin/nervapack"
+    # CLI plus the two MCP servers and the memory CLI (all console_scripts).
+    %w[nervapack nervapack-mcp nervapack-memory nervapack-memory-mcp].each do |script|
+      bin.install_symlink libexec/"bin/#{script}"
+    end
   end
 
   test do
