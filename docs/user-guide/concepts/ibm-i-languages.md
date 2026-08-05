@@ -33,6 +33,40 @@ A file is routed to the regex path when its extension maps to a
 
 ---
 
+## EBCDIC-encoded members
+
+> Added in **v0.7.1** (auto-detection improved in **v0.7.2**)
+
+Real mainframe COBOL/RPG members are frequently stored in **EBCDIC**, not
+ASCII/UTF-8. NervaPack detects EBCDIC automatically and decodes it with the
+correct code page before parsing — so a source member pulled straight off an
+IBM i / z/OS system is indexed correctly without any manual conversion.
+
+Detection relies on a signal that is robust and specific to indentation-heavy
+source: EBCDIC files are dominated by `0x40` (the EBCDIC space) and contain
+essentially no `0x20`, the opposite of ASCII/UTF-8 text. EBCDIC line endings
+(`0x25`, and NEL `0x15`) are normalised to `\n`.
+
+You can override detection with the `NERVAPACK_EBCDIC` environment variable:
+
+| Value | Behaviour |
+|---|---|
+| unset / `auto` | Heuristic auto-detection (default) |
+| `cp037`, `cp500`, `cp1140`, `cp273`, … | Force this EBCDIC code page for every candidate file |
+| `off` | Disable EBCDIC; always read as UTF-8 |
+
+```bash
+# Force US/Canada code page for a known-EBCDIC repository
+NERVAPACK_EBCDIC=cp037 nervapack ingest /path/to/members
+```
+
+The default code page when auto-detection fires is **`cp037`** (US/Canada), the
+most common. If your shop uses a different page (e.g. `cp500` international or
+`cp273` Germany/Austria), set `NERVAPACK_EBCDIC` accordingly. An unknown or
+mismatched codec falls back to UTF-8 rather than failing the ingest.
+
+---
+
 ## Supported extensions
 
 | Language | Extensions |

@@ -15,6 +15,10 @@ higher-level overview.
     options:
       show_source: true
 
+::: nervapack.parser.encoding
+    options:
+      show_source: true
+
 ::: nervapack.parser.md_chunker
     options:
       show_source: true

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.2] - 2026-08-05
+
+### Added
+- **EBCDIC decoding for mainframe COBOL/RPG.** Source members stored in EBCDIC (as they are on most IBM i / z/OS systems) are now auto-detected and decoded with the correct code page before parsing — previously they were read as UTF-8 and produced garbage. Detection uses a robust EBCDIC-space (`0x40`) vs. ASCII-space (`0x20`) signal, and EBCDIC line endings (`0x25`, NEL `0x15`) are normalized to `\n`. Override with the `NERVAPACK_EBCDIC` environment variable: `auto` (default), a code page name (e.g. `cp037`, `cp500`, `cp1140`, `cp273`) to force decoding, or `off` to disable. Unknown/mismatched codecs fall back to UTF-8. New module `nervapack.parser.encoding`.
+
+---
+
 ## [0.7.1] - 2026-08-05
 
 ### Fixed

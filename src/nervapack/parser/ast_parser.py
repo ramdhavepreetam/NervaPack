@@ -189,8 +189,10 @@ class ASTParser:
         # Regex path: languages without a tree-sitter grammar (RPG/CL/COBOL).
         config = LANGUAGE_REGISTRY.get(ext)
         if config is not None and config.regex_extractor is not None:
-            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-                text = f.read()
+            # read_source_text decodes EBCDIC when detected/forced (mainframe
+            # COBOL/RPG members), falling back to UTF-8 for everything else.
+            from nervapack.parser.encoding import read_source_text
+            text = read_source_text(file_path)
             return config.regex_extractor(text, file_path)
 
         parser = self._get_parser(ext)
