@@ -1,9 +1,9 @@
 class Nervapack < Formula
   desc "Privacy-first, offline knowledge graph for developers"
   homepage "https://github.com/ramdhavepreetam/NervaPack"
-  # Update url and sha256 after running: pip download nervapack==<ver> --no-deps --no-binary :all:
-  # then: shasum -a 256 nervapack-<ver>.tar.gz
-  url "https://files.pythonhosted.org/packages/source/n/nervapack/nervapack-0.7.0.tar.gz"
+  # Use the canonical "Source" URL from https://pypi.org/project/nervapack/#files
+  # (brew audit rejects the /packages/source/ redirect form).
+  url "https://files.pythonhosted.org/packages/4a/5d/87e0d33fdae9448c9fd76b0a2c742a6c65138fe6eae1d9ec0336fe3ebfe0/nervapack-0.7.0.tar.gz"
   sha256 "479389cbf04a0d7aa64ffdfa935dfe0a8baa645c315d1b6b69e042f81afb961a"
   license "MIT"
 
