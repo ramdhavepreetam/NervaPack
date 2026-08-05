@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.1] - 2026-08-05
+
+### Fixed
+- **GraphML serialization crash on legacy COBOL/RPG source.** Fixed-form source and copybooks often contain NUL bytes, form-feed page-ejects (`0x0C`), and other C0 control characters, which made `nervapack ingest` fail with *"All strings must be XML compatible: Unicode or ASCII, no NULL bytes or control characters"*. Entity names/content are now sanitized of XML-illegal control characters (tab/LF/CR are preserved), and `GraphBuilder.save_graph` scrubs all node/edge string attributes before writing — a safety net that protects every language.
+
+---
+
 ## [0.7.0] - 2026-08-04
 
 ### Added
