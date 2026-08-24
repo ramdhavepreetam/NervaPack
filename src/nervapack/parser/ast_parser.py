@@ -108,10 +108,64 @@ def _looks_minified(dir_path: str) -> bool:
 
 
 # Cache to avoid re-checking the same absolute dir path multiple times.
-_vendor_cache: Dict[str, bool] = {}
+# Keyed by (dir_path, scan_root) — the same directory can be own-source under
+# one root and vendor under another.
+_vendor_cache: Dict[tuple, bool] = {}
+
+# Conventional source-root directory names. A directory reached without
+# passing through any of these, and not under a known vendor dir, is treated
+# as the project's own code.
+# NOTE: names here must not also appear in _SKIP_DIRS — those are pruned from
+# the walk before _is_vendor_dir is ever consulted, so listing them would be
+# both dead and contradictory ("lib"/"libs" are deliberately absent).
+_SOURCE_ROOT_NAMES = {"src", "app", "apps", "packages", "source"}
 
 
-def _is_vendor_dir(dir_path: str, name: str) -> bool:
+_source_roots_cache: Dict[str, Set[str]] = {}
+
+
+def _own_source_roots(scan_root: str) -> Set[str]:
+    """Absolute paths under `scan_root` that hold the project's own source.
+
+    The scan root itself always counts. Conventional source directories
+    (``src/``, ``packages/`` …) directly beneath it count too, so a monorepo
+    package carrying its own ``pyproject.toml`` / ``package.json`` is not
+    mistaken for a vendored dependency.
+    """
+    cached = _source_roots_cache.get(scan_root)
+    if cached is not None:
+        return cached
+    roots = {os.path.abspath(scan_root)}
+    try:
+        for entry in os.scandir(scan_root):
+            if entry.is_dir() and entry.name in _SOURCE_ROOT_NAMES:
+                roots.add(os.path.abspath(entry.path))
+    except OSError:
+        pass
+    _source_roots_cache[scan_root] = roots
+    return roots
+
+
+def _is_under_own_source(dir_path: str, scan_root: str) -> bool:
+    """True if dir_path sits inside one of the project's own source roots."""
+    abs_dir = os.path.abspath(dir_path)
+    for root in _own_source_roots(scan_root):
+        try:
+            rel = os.path.relpath(abs_dir, root)
+        except ValueError:
+            continue
+        if rel.startswith(os.pardir):
+            continue
+        # Anything routed through an explicit vendor/dependency dir is not
+        # own source, however far up the source root sits.
+        parts = Path(rel).parts
+        if any(part in _SKIP_DIRS for part in parts):
+            continue
+        return True
+    return False
+
+
+def _is_vendor_dir(dir_path: str, name: str, scan_root: Optional[str] = None) -> bool:
     """
     Returns True if dir_path should be treated as vendor/third-party code.
     Combines:
@@ -119,19 +173,27 @@ def _is_vendor_dir(dir_path: str, name: str) -> bool:
       - embedded manifest check (Option 3a): contains package.json / pyproject.toml
       - minification heuristic (Option 3b): nearly all JS/TS files are minified
 
-    This is always called on a *subdirectory* of the scan root, never the
-    root itself, so every signal is safe to apply without a root-exclusion guard.
+    The first two signals fire on directories that are perfectly ordinary in a
+    project's own tree: a monorepo package has its own manifest, and a package
+    installed in editable mode shares its name with the source dir that defines
+    it. Both are therefore suppressed inside the project's own source roots
+    when `scan_root` is supplied; the minification check still applies, since
+    a bundle checked into your own tree is vendor code wherever it lives.
     """
-    if dir_path in _vendor_cache:
-        return _vendor_cache[dir_path]
+    key = (dir_path, scan_root)
+    if key in _vendor_cache:
+        return _vendor_cache[key]
 
-    result = (
-        _is_installed_package_dir(name)
-        or _has_embedded_manifest(dir_path)
-        or _looks_minified(dir_path)
-    )
+    if scan_root is not None and _is_under_own_source(dir_path, scan_root):
+        result = _looks_minified(dir_path)
+    else:
+        result = (
+            _is_installed_package_dir(name)
+            or _has_embedded_manifest(dir_path)
+            or _looks_minified(dir_path)
+        )
 
-    _vendor_cache[dir_path] = result
+    _vendor_cache[key] = result
     return result
 
 
@@ -325,7 +387,7 @@ def scan_directory(directory: str, parser: ASTParser | None = None) -> List[Pars
             if d not in _SKIP_DIRS
             and not d.endswith((".egg-info", ".dist-info"))
             and not _is_ignored(os.path.join(root, d), abs_root, ignore_patterns)
-            and not _is_vendor_dir(os.path.join(root, d), d)
+            and not _is_vendor_dir(os.path.join(root, d), d, abs_root)
         ]
         for file in files:
             # Skip unsupported extensions and minified bundles
