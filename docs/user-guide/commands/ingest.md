@@ -110,6 +110,28 @@ Ingestion complete.
 
 ---
 
+## What Gets Scanned
+
+NervaPack indexes your project's own source and skips third-party code.
+
+**Always skipped:** `node_modules/`, `.venv/` / `venv/`, `vendor/`, `third_party/`,
+`site-packages/`, build outputs (`dist/`, `build/`, `site/`, `target/`), caches,
+and minified bundles (`*.min.js`, `*.bundle.js`, or directories where nearly
+every JS/TS file is one long line). This holds wherever they appear, including
+nested inside a source directory.
+
+**Never skipped:** anything under your project's own source roots — the
+directory you point `ingest` at, plus conventional `src/`, `app/`, `apps/`,
+`packages/`, and `source/` folders directly beneath it. Packages in a monorepo
+keep their own `pyproject.toml` or `package.json` without being mistaken for
+dependencies, and a package you have pip-installed in editable mode is still
+indexed from source.
+
+Add project-specific exclusions in a `.nervapackignore` file, using
+`.gitignore` syntax.
+
+---
+
 ## Performance
 
 Typical times for a Python project (ONNX embeddings, no LLM):
@@ -120,7 +142,9 @@ Typical times for a Python project (ONNX embeddings, no LLM):
 | Medium (50–300 files) | 15–60 seconds | < 1 second |
 | Large (300–1000 files) | 1–4 minutes | < 1 second |
 
-**Warm re-ingest** is near-instant because NervaPack compares existing ChromaDB IDs against new content before embedding — only new or modified entities are sent to the ONNX model.
+**Warm re-ingest** is near-instant because NervaPack compares existing ChromaDB IDs against new content before embedding — only new or modified entities are sent to the ONNX model. Editing a file re-embeds that file's content and nothing else; on a 1,144-chunk corpus that is roughly a third of a second.
+
+Embedding dominates ingest time — parsing and graph construction together account for well under a second even on large repositories. NervaPack uses every CPU core for it by default; see [Tuning Ingest Performance](../../getting-started/installation.md#tuning-ingest-performance) to change that.
 
 **LLM binding** (the `EXPLAINS` edge step) adds time proportional to the number of markdown chunks. Cloud APIs (Claude, OpenAI) are 5–10× faster than Ollama for this step. Skip it with `--no-bind` if you only need the structural graph — ingest completes in under 1 second.
 

@@ -7,3 +7,11 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+
+# MkDocs build output
+site/
+
+# Local scratch / agent state
+.aibot/
+.test_nervapack/
+test_aider/

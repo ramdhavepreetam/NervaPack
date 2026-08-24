@@ -7,6 +7,15 @@ from nervapack.parser.ast_parser import ParsedEntity
 
 _WORD_RE = re.compile(r'[a-zA-Z_]\w*')
 
+# A name defined across more than this many distinct files is treated as
+# generic vocabulary rather than a resolvable symbol.
+MAX_NAME_FANOUT = 3
+
+
+def _file_stem(file_path: str) -> str:
+    """Module-ish name for a path: `src/nervapack/graph/builder.py` -> `builder`."""
+    return Path(file_path).stem if file_path else ""
+
 class GraphBuilder:
     def __init__(self):
         self.graph = nx.DiGraph()
@@ -62,6 +71,21 @@ class GraphBuilder:
 
         name_set: Set[str] = set(entity_nodes_by_name.keys())
 
+        # How many distinct files define each name. A high count means the name
+        # is generic vocabulary ("__init__", "main") *or* a polymorphic
+        # interface implemented across backends ("chat", "estimate_cost").
+        # The two are indistinguishable by count alone, so this is consulted
+        # only as a last resort — after same-file and import-scoped resolution
+        # have had their chance to pick the right target.
+        fanout: Dict[str, int] = {
+            name: len({self._file_of(i) for i in ids})
+            for name, ids in entity_nodes_by_name.items()
+        }
+
+        # Which module names each file imports — used to prefer a target the
+        # referencing file could actually reach.
+        imports_by_file = self._imports_by_file(entities)
+
         # For each entity, tokenize its content and find overlaps.
         # Intersect words with name_set first — reduces inner iterations by ~95%.
         for entity in entities:
@@ -69,11 +93,19 @@ class GraphBuilder:
                 continue
 
             entity_node_id = f"{entity.type}:{entity.file_path}:{entity.name}:{entity.start_line}"
+            src_file = entity.file_path
+            src_imports = imports_by_file.get(src_file, frozenset())
             words = set(_WORD_RE.findall(entity.content)) & name_set
             for word in words:
                 if word == entity.name:
                     continue
-                for target_id in entity_nodes_by_name[word]:
+
+                candidates = entity_nodes_by_name[word]
+                targets = self._resolve_targets(
+                    candidates, src_file, src_imports, fanout[word]
+                )
+
+                for target_id in targets:
                     if target_id != entity_node_id:
                         # Don't overwrite a precise typed edge with a generic one.
                         if self.graph.has_edge(entity_node_id, target_id):
@@ -87,6 +119,68 @@ class GraphBuilder:
                         )
 
         return self.graph
+
+    @staticmethod
+    def _file_of(node_id: str) -> str:
+        """Extract the file path from a `type:file:name:line` node id."""
+        parts = node_id.split(":")
+        return ":".join(parts[1:-2]) if len(parts) >= 4 else ""
+
+    @staticmethod
+    def _imports_by_file(entities: List[ParsedEntity]) -> Dict[str, frozenset]:
+        """Map each file to the set of bare module/symbol names it imports.
+
+        An import entity's name is stored in whatever form the language uses
+        (`os.path`, `nervapack.graph.builder`, `./utils`), so index every
+        path segment: resolution only needs to know a name was mentioned.
+        """
+        raw: Dict[str, Set[str]] = defaultdict(set)
+        for e in entities:
+            if e.type != "import" or not e.name:
+                continue
+            for token in _WORD_RE.findall(e.name):
+                raw[e.file_path].add(token)
+        return {f: frozenset(v) for f, v in raw.items()}
+
+    @staticmethod
+    def _resolve_targets(
+        candidates: List[str], src_file: str, src_imports: frozenset, fanout: int
+    ) -> List[str]:
+        """Narrow same-name definitions to those the source file can reach.
+
+        Preference order, first non-empty wins:
+          1. definitions in the same file (same-module resolution)
+          2. definitions in a file the source imports
+          3. the single candidate, when the name is globally unique
+
+        Tiers 1 and 2 are evidence-based, so they stand regardless of how many
+        files share the name — this is what keeps a polymorphic interface
+        (``chat`` across five provider modules) connected while still refusing
+        to wire every ``__init__`` to every other. Only when no tier resolves
+        does fan-out decide, and a widely-shared name yields no edge at all: a
+        wrong edge is worse than a missing one for retrieval.
+        """
+        same_file = [c for c in candidates if GraphBuilder._file_of(c) == src_file]
+        if same_file:
+            return same_file
+
+        if src_imports:
+            imported = [
+                c for c in candidates
+                if _file_stem(GraphBuilder._file_of(c)) in src_imports
+            ]
+            if imported:
+                return imported
+
+        if len(candidates) == 1:
+            return candidates
+
+        # Unresolved: link the full candidate set only for names narrow enough
+        # that the fan-out stays informative.
+        if fanout <= MAX_NAME_FANOUT:
+            return candidates
+
+        return []
 
     @staticmethod
     def _is_regex_parsed(entity) -> bool:

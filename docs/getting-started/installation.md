@@ -286,6 +286,42 @@ Ollama must be reachable at `http://localhost:11434` (the default). If it's on a
 
 ---
 
+## Tuning Ingest Performance
+
+Almost all of `nervapack ingest` wall time is spent generating embeddings —
+parsing and graph construction are a rounding error by comparison. NervaPack
+therefore runs the embedding model across **all available CPU cores** by
+default.
+
+If you need to limit that — a shared build machine, a CI runner with a CPU
+quota, or a container with fewer cores than the host reports — set:
+
+```bash
+# Use 4 cores instead of all of them
+export NERVAPACK_ONNX_THREADS=4
+
+# Restore onnxruntime's own default thread count
+export NERVAPACK_ONNX_THREADS=0
+```
+
+| Value | Effect |
+|-------|--------|
+| unset (default) | Use every core the machine reports |
+| *N* | Use exactly *N* threads |
+| `0` | Fall back to onnxruntime's internal default |
+
+For reference, on a 15-core machine over a 1,144-chunk corpus this takes cold
+ingest from ~12.9s to ~7.5s. Re-ingesting a project where nothing changed is
+near-instant regardless, because unchanged content is never re-embedded.
+
+!!! note "GPU / CoreML acceleration"
+    NervaPack deliberately runs the embedding model on CPU. The CoreML
+    execution provider was measured at roughly **5x slower** than CPU for
+    `all-MiniLM-L6-v2` — the model is small enough that accelerator dispatch
+    overhead dominates. There is nothing to enable here.
+
+---
+
 ## Troubleshooting Installation
 
 ### Python version errors

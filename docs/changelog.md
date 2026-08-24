@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.8.0] - 2026-08-24
+
+### Fixed
+- **Your own source was excluded from the graph when the project is pip-installed.** The vendor-detection heuristic skipped any directory whose name matched an installed distribution, which is exactly what an editable/development install makes true of your own package. Ingesting a project you had installed indexed almost none of it: scanning the NervaPack repo itself found **36 entities instead of 1,346**, and Auto-GPT found **25 instead of 1,254**. The same heuristic also skipped any directory carrying its own `pyproject.toml` / `package.json`, so every package in a monorepo was dropped. Vendor detection is now scoped to the project's own source roots (the scan root plus conventional `src/`, `app/`, `apps/`, `packages/`, `source/` children); genuine dependencies under `node_modules/`, `.venv/`, `vendor/` and friends are still skipped, including when nested inside a source root.
+
+- **Re-ingesting after a documentation edit re-embedded the entire corpus.** Markdown chunk IDs were numbered with a corpus-global counter, so inserting or removing a single chunk shifted the ID of every chunk after it and defeated the content-equality check that skips unchanged work. IDs are now numbered per file. Re-ingest after editing one file dropped from **13.20s to 0.35s** on a 1,144-chunk corpus; an unchanged re-ingest was already fast and stays that way.
+
+- **`REFERENCES` edges fanned out across the whole repo.** Cross-file name resolution linked every mention of a name to *every* definition sharing it, so a common name defined in 200 files produced 200 edges per reference. Resolution now prefers same-file definitions, then definitions in a file the source actually imports, then a globally unique match; names that remain ambiguous and are defined in more than three files produce no edge rather than a wrong one. On LangChain this cut the graph from **40,776 edges (6.4 per entity) to 18,673 (2.6 per entity)** while indexing more code. Polymorphic interfaces implemented across many files stay connected, because same-file and import evidence is consulted before the fan-out limit.
+
+### Changed
+- **Embedding now uses all available CPU cores.** ChromaDB builds its ONNX session without setting `intra_op_num_threads`, leaving most cores idle during the step that accounts for ~99% of ingest time. NervaPack now sets it to the machine's core count. Cold ingest of a 1,144-chunk corpus dropped from **12.86s to 7.51s** (94 → 149 chunks/s on 15 cores). Set `NERVAPACK_ONNX_THREADS` to override, or to `0` to restore onnxruntime's default.
+
+  Two alternatives were measured and deliberately not adopted: the CoreML execution provider is ~5x *slower* than CPU for this model, and larger embedding batches do not help because the tokenizer pads every input to a fixed 256 tokens.
+
+---
+
 ## [0.7.6] - 2026-08-05
 
 ### Added

@@ -72,8 +72,8 @@ def ingest(
 
     console.print("Ingesting AST nodes into Vector Store...")
     try:
-        from nervapack.graph.vector_store import VectorStore
-        
+        from nervapack.graph.vector_store import VectorStore, build_entity_summary
+
         embed_backend = embeddings or os.getenv("NERVAPACK_EMBEDDINGS", "onnx")
         embed_fn = None
         if embed_backend.lower() == "ollama":
@@ -92,7 +92,7 @@ def ingest(
             node_id = f"{e.type}:{e.file_path}:{e.name}:{e.start_line}"
             ast_docs.append({
                 "node_id": node_id,
-                "summary": f"This is a {e.type} named {e.name} in {e.file_path}. Code:\n{e.content}",
+                "summary": build_entity_summary(e.type, e.name, e.file_path, e.content),
                 "file_path": e.file_path
             })
 
@@ -146,36 +146,59 @@ def ingest(
                     console.print(f"[bold yellow]Notice: Install/Start Ollama to unlock semantic doc-code binding. Building structural graph only. ({e})[/bold yellow]")
                     provider = None
 
-            console.print("Binding documentation to AST (this may take a while)...")
-            import re as _re
-            def _kw_bind(doc_text, nodes, top_k=5):
-                """Keyword-overlap binding — free, instant, no API calls."""
-                doc_words = set(w for w in _re.findall(r"[a-zA-Z_]{4,}", doc_text.lower()))
-                if not doc_words:
-                    return []
-                scored = []
-                for n in nodes:
-                    node_words = set(w for w in _re.findall(r"[a-zA-Z_]{4,}", n["node_id"].lower()))
-                    overlap = len(doc_words & node_words)
-                    if overlap >= 2:
-                        scored.append((overlap, n["node_id"]))
-                scored.sort(key=lambda x: -x[0])
-                return [nid for _, nid in scored[:top_k]]
+                # MCPDelegationProvider.chat() always raises — the request/response
+                # cycle it's designed for (bind_docs_to_ast_delegated) isn't wired to
+                # any MCP tool yet. Calling bind_docs_to_ast on it would silently do a
+                # full scoring pass per chunk and then swallow the exception, paying
+                # for "semantic" binding while actually returning zero matches. Treat
+                # it as unusable here and fall back to the cheap keyword path instead.
+                if provider is not None and provider.get_provider_name() == "mcp-delegation":
+                    console.print("[dim]MCP delegation binding isn't wired up yet — using keyword matching instead.[/dim]")
+                    provider = None
 
+            console.print("Binding documentation to AST (this may take a while)...")
+
+            from nervapack.parser.keyword_binder import build_keyword_index, keyword_search
+
+            # Inverted index (word -> node_ids) built once instead of re-tokenizing
+            # every AST node for every markdown chunk (was O(chunks x nodes)).
+            word_to_node_ids = build_keyword_index(ast_docs)
+
+            def _kw_bind(doc_text, top_k=5):
+                """Keyword-overlap binding — free, instant, no API calls."""
+                return keyword_search(doc_text, word_to_node_ids, top_k=top_k)
+
+            # Build a node_id -> ast_doc lookup so the vector pre-filter can
+            # hand the LLM only the relevant candidates instead of the whole graph.
+            ast_by_id = {d["node_id"]: d for d in ast_docs}
+
+            def _bind_one(chunk):
+                """Bind a single chunk. Runs off the main thread — no graph mutation here."""
+                if provider:
+                    # Vector pre-filter: send only the nearest AST nodes to the LLM.
+                    candidate_ids = vstore.search_ast_candidates(chunk["content"], n_results=15)
+                    candidates = [ast_by_id[cid] for cid in candidate_ids if cid in ast_by_id]
+                    if not candidates:
+                        candidates = ast_docs  # fall back to full set if pre-filter found nothing
+                    matched_ids = provider.bind_docs_to_ast(chunk["content"], candidates)
+                    return matched_ids, "semantic-llm", 0.9
+                else:
+                    return _kw_bind(chunk["content"]), "keyword", 0.5
+
+            # Create markdown nodes up front (single-threaded — graph is not threadsafe).
             for i, chunk in enumerate(md_chunks):
                 md_node_id = f"md_{chunk['file_path']}_{i}"
                 if not graph.has_node(md_node_id):
                     graph.add_node(md_node_id, type="markdown", header=chunk['header'], content=chunk['content'], file_path=chunk['file_path'])
 
-                if provider:
-                    matched_ids = provider.bind_docs_to_ast(chunk['content'], ast_docs)
-                    source = "semantic-llm"
-                    confidence = 0.9
-                else:
-                    matched_ids = _kw_bind(chunk['content'], ast_docs)
-                    source = "keyword"
-                    confidence = 0.5
+            # Bind concurrently (LLM calls are independent, I/O-bound); apply edges on the main thread.
+            from concurrent.futures import ThreadPoolExecutor
+            max_workers = 16 if provider else 1
+            with ThreadPoolExecutor(max_workers=max_workers) as ex:
+                results = list(ex.map(_bind_one, md_chunks))
 
+            for i, (chunk, (matched_ids, source, confidence)) in enumerate(zip(md_chunks, results)):
+                md_node_id = f"md_{chunk['file_path']}_{i}"
                 for matched_id in matched_ids:
                     if graph.has_node(matched_id):
                         graph.add_edge(md_node_id, matched_id, relation="EXPLAINS", source=source, confidence=confidence)
@@ -207,7 +230,7 @@ def sync(path: str = typer.Argument(".", help="Path to the repository to sync"))
     """
     from nervapack.git.tracker import GitTracker
     from nervapack.graph.builder import GraphBuilder
-    from nervapack.graph.vector_store import VectorStore
+    from nervapack.graph.vector_store import VectorStore, build_entity_summary
     from nervapack.parser.ast_parser import ASTParser
     from nervapack.parser.md_chunker import MarkdownChunker
     from nervapack.parser.language_registry import LANGUAGE_REGISTRY
@@ -278,7 +301,7 @@ def sync(path: str = typer.Argument(".", help="Path to the repository to sync"))
                 graph.add_edge(file_node_id, entity_node_id, relation="DEFINES")
                 new_summaries.append({
                     "node_id": entity_node_id,
-                    "summary": f"This is a {entity.type} named {entity.name} in {entity.file_path}. Code:\n{entity.content}",
+                    "summary": build_entity_summary(entity.type, entity.name, entity.file_path, entity.content),
                     "file_path": entity.file_path,
                 })
 
@@ -1433,6 +1456,7 @@ def enrich(
     Add semantic doc-to-code edges to an existing NervaPack graph.
     """
     from nervapack.graph.builder import GraphBuilder
+    from nervapack.graph.vector_store import build_entity_summary
     from nervapack.llm.factory import get_llm_provider
     from rich.prompt import Confirm
     import os
@@ -1461,7 +1485,9 @@ def enrich(
         elif data.get("type") in ["class", "function", "import"]:
             ast_docs.append({
                 "node_id": node_id,
-                "summary": f"This is a {data.get('type')} named {data.get('name')} in {data.get('file_path')}. Code:\n{data.get('content')}"
+                "summary": build_entity_summary(
+                    data.get("type"), data.get("name"), data.get("file_path"), data.get("content") or ""
+                )
             })
 
     if not md_chunks:
@@ -1481,6 +1507,15 @@ def enrich(
         if not provider.validate_config():
             raise ValueError(f"Provider {provider_name} configuration invalid")
         
+        # MCPDelegationProvider.chat() always raises (its request/response cycle
+        # isn't wired to any MCP tool yet), so bind_docs_to_ast would silently
+        # return [] for every chunk. Fail fast instead of pretending to enrich.
+        if provider_name == "mcp-delegation":
+            raise ValueError(
+                "mcp-delegation does not support 'enrich' yet. "
+                "Use --llm ollama, --llm claude, or --llm openai instead."
+            )
+
         console.print(f"Using LLM provider: [green]{provider_name}[/green]")
 
         estimated_cost = provider.estimate_cost(len(md_chunks))
@@ -1499,13 +1534,35 @@ def enrich(
         raise typer.Exit(1)
 
     console.print(f"Adding semantic edges for {len(md_chunks)} markdown chunks...")
+
+    # Vector pre-filter (reusing the chroma_db populated by 'ingest') so each
+    # LLM call sees only the ~15 nearest candidates instead of the full
+    # ast_docs list — avoids O(chunks x nodes) prompt-building work, same
+    # approach 'ingest' already uses.
+    ast_by_id = {d["node_id"]: d for d in ast_docs}
+    try:
+        from nervapack.graph.vector_store import VectorStore
+        vstore = VectorStore()
+    except Exception:
+        vstore = None
+
+    def _bind_one(chunk):
+        candidates = ast_docs
+        if vstore is not None:
+            candidate_ids = vstore.search_ast_candidates(chunk["content"], n_results=15)
+            filtered = [ast_by_id[cid] for cid in candidate_ids if cid in ast_by_id]
+            if filtered:
+                candidates = filtered
+        return chunk, provider.bind_docs_to_ast(chunk["content"], candidates)
+
     added_edges = 0
-    for chunk in md_chunks:
-        matched_ids = provider.bind_docs_to_ast(chunk['content'], ast_docs)
-        for matched_id in matched_ids:
-            if graph.has_node(matched_id) and not graph.has_edge(chunk["node_id"], matched_id):
-                graph.add_edge(chunk["node_id"], matched_id, relation="EXPLAINS")
-                added_edges += 1
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=16) as ex:
+        for chunk, matched_ids in ex.map(_bind_one, md_chunks):
+            for matched_id in matched_ids:
+                if graph.has_node(matched_id) and not graph.has_edge(chunk["node_id"], matched_id):
+                    graph.add_edge(chunk["node_id"], matched_id, relation="EXPLAINS")
+                    added_edges += 1
 
     builder.save_graph()
     console.print(f"[bold green]Enrichment complete. Added {added_edges} semantic edges.[/bold green]")
