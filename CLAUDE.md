@@ -53,6 +53,18 @@ Always call `query_codebase` first — it returns AST-precise, token-efficient c
    `ruby -c Formula/nervapack.rb`.
 6. Bump the version strings in `.mcp.json`, and re-check the tool lists there
    against the package rather than editing the numbers alone.
+7. **Push the formula to the tap repo** — `github.com/ramdhavepreetam/homebrew-nervapack`
+   is what `brew install` actually reads; `Formula/nervapack.rb` in this repo is
+   only a copy, and has silently drifted behind before (the tap sat on 0.7.6
+   while PyPI was on 0.8.0). Copy the formula into the tap checkout at
+   `/opt/homebrew/Library/Taps/ramdhavepreetam/homebrew-nervapack`, commit as
+   `nervapack <version>`, and push.
+
+   Auditing it: Homebrew refuses to run as root, so prefix with
+   `sudo -u preetam`; and `brew audit <path>` is disabled, so audit by name
+   against the tap — `brew audit --strict --online ramdhavepreetam/nervapack/nervapack`.
+   `brew fetch <name>` is the real checksum test: it downloads the tarball and
+   validates the sha256.
 
 ## Key architecture facts
 
