@@ -299,7 +299,7 @@ async def test_memory_list_sessions(mcp_app):
 async def test_memory_clear_session_tombstone(mcp_app):
     async with create_connected_server_and_client_session(mcp_app) as client:
         # Create a session by storing a fact
-        store_result = await _call_tool(client, "memory_store", {"content": "clearable fact", "kind": "fact"})
+        await _call_tool(client, "memory_store", {"content": "clearable fact", "kind": "fact"})
         sessions = await _call_tool(client, "memory_list_sessions", {})
         sid = sessions[0]["id"]
         clear_result = await _call_tool(client, "memory_clear_session", {"session_id": sid, "purge": False})
@@ -654,10 +654,6 @@ async def test_memory_verify_staleness_detects_modified_file(mcp_app, tmp_path, 
     )
     ms._code_graph = None
     monkeypatch.setattr(ms, "_get_code_graph", lambda: G)
-
-    # Monkeypatch repo root resolution so file_path resolves to tmp_path
-    import nervapack.memory.mcp_server as ms_module
-    original_staleness = ms_module.memory_verify_staleness
 
     async with create_connected_server_and_client_session(mcp_app) as client:
         await _call_tool(client, "memory_store", {

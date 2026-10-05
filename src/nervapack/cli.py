@@ -192,11 +192,11 @@ def ingest(
             if provider is not None:
                 estimated_cost = provider.estimate_cost(len(md_chunks))
                 if estimated_cost is not None and estimated_cost > 0:
-                    console.print(f"\n[bold yellow]💰 Cost Estimate[/bold yellow]")
+                    console.print("\n[bold yellow]💰 Cost Estimate[/bold yellow]")
                     console.print(f"Provider: {provider.get_provider_name()}")
                     console.print(f"Markdown chunks to bind: {len(md_chunks)}")
                     console.print(f"Estimated cost: [yellow]${estimated_cost:.2f}[/yellow]")
-                    console.print(f"(Actual cost may vary based on content length)\n")
+                    console.print("(Actual cost may vary based on content length)\n")
 
                     if not Confirm.ask("Proceed with cloud LLM binding?"):
                         console.print("[yellow]LLM binding cancelled — using fast keyword binding instead.[/yellow]")
@@ -318,8 +318,8 @@ def sync(
         builder = GraphBuilder()
         graph = builder.load_graph()
         vstore = VectorStore()
-    except Exception as e:
-        console.print(f"[bold red]Failed to load graph or vector store. Run 'nervapack ingest' first.[/bold red]")
+    except Exception:
+        console.print("[bold red]Failed to load graph or vector store. Run 'nervapack ingest' first.[/bold red]")
         raise typer.Exit(1)
 
     provider = _setup_bind_provider(llm, model, api_key) if bind_mode == "llm" else None
@@ -824,7 +824,7 @@ def explore(
         output = f".nervapack/explore_{safe_target}.html"
 
     # Export with enhanced features
-    console.print(f"[bold blue]Rendering subgraph...[/bold blue]")
+    console.print("[bold blue]Rendering subgraph...[/bold blue]")
     export_html_enhanced(
         subgraph,
         output,
@@ -850,8 +850,6 @@ def status(detailed: bool = typer.Option(False, "--detailed", "-d", help="Show d
     from nervapack.graph.analytics import GraphAnalytics, format_percentage_bar, format_number
     from rich.panel import Panel
     from rich.table import Table
-    from rich import box
-    from rich.text import Text
 
     try:
         builder = GraphBuilder()
@@ -864,14 +862,14 @@ def status(detailed: bool = typer.Option(False, "--detailed", "-d", help="Show d
     if not detailed:
         # Simple status output (original behavior)
         console.print("[bold cyan]NervaPack Status:[/bold cyan]")
-        console.print(f"- Graph loaded: [green]Yes[/green]")
+        console.print("- Graph loaded: [green]Yes[/green]")
         console.print(f"- Nodes: [cyan]{graph.number_of_nodes()}[/cyan]")
         console.print(f"- Edges: [cyan]{graph.number_of_edges()}[/cyan]")
 
         gitsync = GitTracker()
         if gitsync.repo:
             changed = gitsync.get_changed_files()
-            console.print(f"- Git repo detected: [green]Yes[/green]")
+            console.print("- Git repo detected: [green]Yes[/green]")
             if changed:
                 console.print(f"- Unsynced changes: [yellow]{len(changed)} file(s)[/yellow]")
                 for f in changed[:5]:
@@ -955,13 +953,13 @@ def status(detailed: bool = typer.Option(False, "--detailed", "-d", help="Show d
         "[bold]📚 Language Distribution[/bold]",
         *lang_lines,
         "",
-        f"[bold]📖 Documentation Coverage[/bold]",
+        "[bold]📖 Documentation Coverage[/bold]",
         f"  [{doc_color}]{doc_bar}[/{doc_color}] {doc_pct:.1f}% ({doc_cov['documented']}/{doc_cov['total']} entities)",
         "",
         "[bold]🔗 Most Connected Files[/bold]",
         *conn_lines,
         "",
-        f"[bold]🔄 Git Sync Status[/bold]",
+        "[bold]🔄 Git Sync Status[/bold]",
         f"  {git_status_line}",
     ]
 
@@ -998,9 +996,8 @@ def serve(
     from pathlib import Path
 
     # Check if streamlit is installed
-    try:
-        import streamlit
-    except ImportError:
+    import importlib.util
+    if importlib.util.find_spec("streamlit") is None:
         console.print("[bold red]Streamlit not installed.[/bold red]")
         console.print("\nInstall with: [cyan]pip install \"nervapack[dashboard]\"[/cyan]")
         console.print("Or: [cyan]pip install streamlit plotly[/cyan]")
@@ -1013,7 +1010,7 @@ def serve(
         console.print(f"[bold red]Dashboard app not found:[/bold red] {dashboard_path}")
         raise typer.Exit(1)
 
-    console.print(f"[bold cyan]🚀 Launching NervaPack Dashboard...[/bold cyan]")
+    console.print("[bold cyan]🚀 Launching NervaPack Dashboard...[/bold cyan]")
     console.print(f"[dim]Port: {port}[/dim]")
     console.print(f"[dim]URL: http://localhost:{port}[/dim]\n")
 
@@ -1180,7 +1177,7 @@ def dependencies(
         console.print()
 
     # Generate visualization
-    console.print(f"[bold blue]Generating dependency visualization...[/bold blue]")
+    console.print("[bold blue]Generating dependency visualization...[/bold blue]")
 
     # Update metrics with actual cycle count
     analyzer.export_dependency_graph_html(
@@ -1309,7 +1306,7 @@ def history(
         try:
             dt = datetime.fromisoformat(query.timestamp)
             time_str = dt.strftime("%Y-%m-%d %H:%M")
-        except:
+        except (TypeError, ValueError):
             time_str = query.timestamp[:16]
 
         # Truncate long queries
@@ -1348,7 +1345,7 @@ def history(
     console.print(f"\n[dim]Showing {len(queries)} most recent queries[/dim]")
     console.print(f"Average token savings: [green]{avg_savings_pct:.1f}%[/green]")
     console.print(f"Total tokens saved: [green]{format_number(total_savings)}[/green]")
-    console.print(f"\n[dim]Use [cyan]--limit N[/cyan] to show more queries or [cyan]--stats[/cyan] for detailed analytics.[/dim]")
+    console.print("\n[dim]Use [cyan]--limit N[/cyan] to show more queries or [cyan]--stats[/cyan] for detailed analytics.[/dim]")
 
 @app.command()
 def savings(
@@ -1432,8 +1429,8 @@ def savings(
     table.add_row("Top query topics", f"[dim]{topics}[/dim]")
 
     footer = Text.from_markup(
-        f"\n  [dim]Run [cyan]nervapack history --stats[/cyan] for per-query breakdown  "
-        f"·  [cyan]nervapack savings --json[/cyan] for machine-readable output[/dim]"
+        "\n  [dim]Run [cyan]nervapack history --stats[/cyan] for per-query breakdown  "
+        "·  [cyan]nervapack savings --json[/cyan] for machine-readable output[/dim]"
     )
 
     content = Group(table, Rule(style="dim"), footer)
@@ -1457,7 +1454,6 @@ def hotspots(
     """
     from nervapack.graph.hotspots import HotspotAnalyzer
     from rich.table import Table
-    from rich.panel import Panel
     from rich import box
 
     analyzer = HotspotAnalyzer()
@@ -1528,15 +1524,14 @@ def enrich(
     from nervapack.graph.vector_store import build_entity_summary
     from nervapack.llm.factory import get_llm_provider
     from rich.prompt import Confirm
-    import os
 
     console.print(f"[bold blue]Enriching repository at {path}...[/bold blue]")
 
     builder = GraphBuilder()
     try:
         graph = builder.load_graph()
-    except Exception as e:
-        console.print(f"[bold red]Failed to load graph. Did you run 'nervapack ingest' first?[/bold red]")
+    except Exception:
+        console.print("[bold red]Failed to load graph. Did you run 'nervapack ingest' first?[/bold red]")
         raise typer.Exit(1)
 
     # Reconstruct AST docs and Markdown chunks from the graph
@@ -1589,7 +1584,7 @@ def enrich(
 
         estimated_cost = provider.estimate_cost(len(md_chunks))
         if estimated_cost is not None and estimated_cost > 0:
-            console.print(f"\n[bold yellow]💰 Cost Estimate[/bold yellow]")
+            console.print("\n[bold yellow]💰 Cost Estimate[/bold yellow]")
             console.print(f"Provider: {provider_name}")
             console.print(f"Markdown chunks to bind: {len(md_chunks)}")
             console.print(f"Estimated cost: [yellow]${estimated_cost:.2f}[/yellow]")

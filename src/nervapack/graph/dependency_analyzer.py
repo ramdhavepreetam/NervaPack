@@ -3,9 +3,8 @@ Dependency Graph Analyzer - Analyze import dependencies and detect circular depe
 """
 
 import networkx as nx
-from typing import Dict, List, Tuple, Set, Optional
+from typing import Dict, List, Tuple, Optional
 from pathlib import Path
-from collections import defaultdict
 
 
 class DependencyAnalyzer:

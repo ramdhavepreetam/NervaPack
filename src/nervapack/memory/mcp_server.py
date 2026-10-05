@@ -11,7 +11,6 @@ Or add to .mcp.json:
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -24,8 +23,6 @@ except ImportError:
         "MCP SDK is not installed. Run: pip install nervapack[mcp]"
     )
 
-from .consolidate import RuleBasedConsolidator
-from .pack import get_token_counter, pack
 from .recall import recall as _recall_pipeline, recall_timeline
 from .resolve import match_code_entity, resolve_entities
 from .store import MemoryStore, _now_iso

@@ -10,9 +10,7 @@ Or add to .mcp.json:
 """
 from __future__ import annotations
 
-import json
 import os
-from typing import Optional
 
 try:
     from mcp.server.fastmcp import FastMCP
@@ -104,7 +102,6 @@ def query(prompt: str, max_hops: int = 1) -> str:
         # Record in query history so MCP/Copilot usage counts toward savings totals
         try:
             from nervapack.graph.query_history import QueryHistory
-            import time as _time
             QueryHistory().add_query(
                 query=prompt,
                 seed_nodes_count=len(start_nodes),
@@ -168,7 +165,7 @@ def graph_status() -> str:
                 ext_counts[ext] = ext_counts.get(ext, 0) + 1
 
     lines = [
-        f"## NervaPack Graph Status\n",
+        "## NervaPack Graph Status\n",
         f"**Nodes:** {graph.number_of_nodes():,}  |  **Edges:** {graph.number_of_edges():,}\n",
         "### Node breakdown",
     ]

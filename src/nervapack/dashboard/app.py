@@ -420,7 +420,7 @@ def render_query_history():
             try:
                 dt = datetime.fromisoformat(q.timestamp)
                 time_str = dt.strftime("%Y-%m-%d %H:%M")
-            except:
+            except (TypeError, ValueError):
                 time_str = q.timestamp[:16]
 
             data.append({

@@ -1,5 +1,4 @@
 import os
-import re
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Dict, List, Any, Optional, Set
@@ -98,7 +97,7 @@ def _looks_minified(dir_path: str) -> bool:
                 lines = fh.readlines()
             if not lines:
                 continue
-            long = sum(1 for l in lines if len(l) > _MINIFIED_LONG_LINE)
+            long = sum(1 for line in lines if len(line) > _MINIFIED_LONG_LINE)
             if long / len(lines) >= _MINIFIED_LINE_RATIO:
                 long_line_files += 1
         except OSError:

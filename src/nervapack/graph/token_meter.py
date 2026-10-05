@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from typing import List, Tuple
 
 from rich.panel import Panel
@@ -85,7 +84,7 @@ def render_savings_panel(
     table.add_row(
         "[green]NervaPack[/green]",
         f"[green]{prefix}{nervapack_tokens:,}[/green]",
-        f"[green]{_bar(round(pct_nervapack / 5))}[/green]",
+        f"[green]{np_bar}[/green]",
         f"[green]{pct_nervapack:.1f}%[/green]",
     )
 

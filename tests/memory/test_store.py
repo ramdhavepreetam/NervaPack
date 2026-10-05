@@ -203,7 +203,8 @@ def test_consolidate_deduplicates_near_identical(store):
     store.queue_consolidation(sid, "session summary")
     # Two near-identical facts (Jaccard > 0.9): same sentence, one extra common word
     store.add_node("fact", "The database should use postgres for all environments consistently", session_id=sid)
-    import time; time.sleep(0.01)
+    import time
+    time.sleep(0.01)
     store.add_node("fact", "The database should use postgres for all environments consistently", session_id=sid)
     consolidator = RuleBasedConsolidator(store)
     result = consolidator.process_pending()

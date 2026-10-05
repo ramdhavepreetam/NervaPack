@@ -1,6 +1,6 @@
 import networkx as nx
 from collections import deque
-from typing import List, Set, Dict, Tuple, Optional
+from typing import List, Tuple, Optional
 from dataclasses import dataclass
 
 
@@ -61,12 +61,6 @@ class GraphRetriever:
                             # Track edge traversal
                             edge_data = self.graph.get_edge_data(current_node, neighbor)
                             relation = edge_data.get("relation", "unknown") if edge_data else "unknown"
-                            source = edge_data.get("source", "unknown") if edge_data else "unknown"
-                            confidence = edge_data.get("confidence", 1.0) if edge_data else 1.0
-                            # We can just store source/confidence in the third tuple slot, or expand it. Let's expand it.
-                            # But wait, Metadata expects List[Tuple[str, str, str]]. Let's stick to relation, maybe format as relation|source
-                            # Actually, we can just change the tuple to Dict or add it. The formatting only uses `relation`.
-                            # We'll just leave it as (current, neighbor, relation) to avoid breaking existing usages, but we can append them if needed.
                             edges_followed.append((current_node, neighbor, relation))
                             queue.append((neighbor, hops + 1))
 
