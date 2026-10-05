@@ -158,3 +158,18 @@ def test_tuned_session_excludes_coreml(monkeypatch):
     if ef is None:
         pytest.skip("chromadb onnx extra unavailable")
     assert "CoreMLExecutionProvider" not in ef.model.get_providers()
+
+
+def test_test_scratch_copy_is_not_ingested(tmp_path):
+    """A .test_nervapack/ scratch copy of the source duplicated every entity
+    in the graph and split doc-binding edges between the copy and the real code."""
+    from nervapack.parser.ast_parser import scan_directory
+    from nervapack.parser.md_chunker import scan_markdown_directory
+
+    for base in (tmp_path, tmp_path / ".test_nervapack"):
+        (base / "src").mkdir(parents=True)
+        (base / "src" / "mod.py").write_text("def f():\n    pass\n")
+        (base / "README.md").write_text("# Title\n\n" + "Some documentation text. " * 10)
+
+    assert {e.file_path for e in scan_directory(str(tmp_path))} == {str(tmp_path / "src" / "mod.py")}
+    assert {c["file_path"] for c in scan_markdown_directory(str(tmp_path))} == {str(tmp_path / "README.md")}

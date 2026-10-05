@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Changed
+- **Two explicit doc-binding modes: `--mode fast` (default) and `--mode llm`.** `ingest` and `sync` now take `--mode fast|llm` (or `NERVAPACK_INGEST_MODE`). Fast mode links docs to code by keyword matching and never contacts an LLM. LLM mode lets Ollama, Claude or OpenAI pick the code each doc chunk explains. Passing `--llm <provider>` implies `--mode llm`, and `--no-bind` remains as an alias for `--mode fast`. In LLM mode a misconfigured provider now stops ingest up front instead of silently degrading, and a progress bar tracks the binding pass.
+
+### Fixed
+- **Fast-mode doc binding was mostly noise.** Keyword binding scored prose words against each entity's node ID, which embeds the file path and entity type. As a result, path words ("nervapack", "documents") and type words ("function", "class") matched almost every chunk. On the NervaPack repo, **65% of the 4,241 `EXPLAINS` edges pointed at import nodes**, with `json` alone "explained" by 84 doc sections. A chunk is now linked only to the functions and classes it names as code: in backticks, as a call, or as a compound identifier such as `build_keyword_index`. Matching is case-sensitive and skips imports, CLI flags and keyword arguments. A name defined in more than three places needs its file mentioned too. Edges on the same repo fell to 1,241, all pointing at functions or classes, and a 15-edge spot check found 13 clearly correct.
+- **`.test_nervapack/` scratch copies were ingested.** A scratch copy of the source under `.test_nervapack/` was indexed alongside the real code, duplicating most entities and splitting doc links between the two copies. It is now on the built-in skip list for code and Markdown. On the NervaPack repo, a cold ingest now finds 764 entities instead of ~1,350 and runs in 15s instead of 20s.
+- **Ingest became hours long whenever Ollama was running.** Without `--llm`, `ingest` (and every `sync` that touched a markdown file) still auto-detected Ollama and sent each doc chunk to it, contrary to the documented keyword-only default. If the requested model wasn't installed, the provider substituted the first model installed — on one machine a 24B chat model at ~8s per chunk, or about 2.8 hours for the NervaPack repo's 1,264 chunks. The default ingest of the same repo now completes in ~20s. LLM mode also warns when it substitutes an Ollama model.
+
+---
+
 ## [0.8.0] - 2026-08-24
 
 ### Fixed

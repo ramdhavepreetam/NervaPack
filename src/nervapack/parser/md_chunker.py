@@ -77,7 +77,7 @@ _MD_SKIP_DIRS = {
     ".nervapack",
     "dist", "build", "site", "target", "out", "output",
     ".eggs", ".tox", ".mypy_cache", ".pytest_cache", ".ruff_cache",
-    "htmlcov", "coverage",
+    "htmlcov", "coverage", ".test_nervapack",
     ".next", ".nuxt", ".svelte-kit", ".turbo",
     "bin", ".gradle",
     ".idea", ".vscode",

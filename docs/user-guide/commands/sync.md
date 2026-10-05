@@ -7,7 +7,7 @@ Incrementally update the graph after code changes — without re-ingesting the w
 ## Synopsis
 
 ```bash
-nervapack sync [PATH]
+nervapack sync [PATH] [--mode fast|llm] [--llm PROVIDER] [--model MODEL]
 ```
 
 ---
@@ -19,7 +19,7 @@ nervapack sync [PATH]
 - **Removes** old nodes and ChromaDB vectors for each changed file.
 - **Re-parses** the updated file with tree-sitter.
 - **Re-embeds** the new entities into ChromaDB (batched in one call per file).
-- **Re-binds** any markdown docs linked to the changed file.
+- **Re-binds** changed markdown docs to code, using the same [binding mode](ingest.md#binding-modes) as `ingest` (fast keyword matching unless you pass `--mode llm`).
 - **Saves** the updated graph once at the end.
 
 A full `ingest` on a large project can take minutes. `sync` turns that into a 2–5 second surgical update per file.
@@ -34,6 +34,10 @@ A full `ingest` on a large project can take minutes. `sync` turns that into a 2�
 | Argument | Description | Default |
 |----------|-------------|---------|
 | `PATH` | Path to the repository root | `.` (current directory) |
+| `--mode`, `-m` | Doc binding mode: `fast` or `llm` | `fast`, or `NERVAPACK_INGEST_MODE` |
+| `--llm` | LLM provider for `--mode llm` (implies it) | `ollama` |
+| `--model` | Model name (provider-specific) | Provider default |
+| `--api-key` | API key for cloud providers | From env vars |
 
 ---
 

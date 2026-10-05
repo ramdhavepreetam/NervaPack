@@ -27,39 +27,119 @@ def init():
     # TODO: Implement initialization logic
     console.print("Initialization complete.")
 
+
+BIND_MODES = ("fast", "llm")
+
+
+def _resolve_bind_mode(mode: Optional[str], llm: Optional[str], no_bind: bool = False) -> str:
+    """Pick the doc-to-code binding mode: ``fast`` (keyword) or ``llm``.
+
+    An LLM is only ever used when asked for — via ``--mode llm``, an explicit
+    ``--llm`` provider, or ``NERVAPACK_INGEST_MODE=llm``. Auto-detecting a
+    running Ollama used to put every markdown chunk through whatever model was
+    installed first (8s+ per chunk for a 24B model, hours per corpus).
+    """
+    import os
+
+    if no_bind:
+        if mode and mode.lower() == "llm":
+            raise typer.BadParameter("--no-bind conflicts with --mode llm")
+        return "fast"
+    if mode:
+        resolved = mode.lower()
+        if resolved not in BIND_MODES:
+            raise typer.BadParameter(f"--mode must be one of: {', '.join(BIND_MODES)}")
+        if resolved == "fast" and llm:
+            console.print(f"[dim]--mode fast: ignoring --llm {llm}.[/dim]")
+        return resolved
+    if llm:
+        return "llm"
+    env = os.getenv("NERVAPACK_INGEST_MODE", "").lower()
+    return env if env in BIND_MODES else "fast"
+
+
+def _setup_bind_provider(llm: Optional[str], model: Optional[str], api_key: Optional[str]):
+    """Build the LLM provider for ``--mode llm``, or exit.
+
+    The user explicitly chose LLM binding, so a broken provider is an error
+    rather than a silent downgrade to keyword binding.
+    """
+    import os
+    from nervapack.llm.factory import get_llm_provider
+
+    try:
+        provider = get_llm_provider(provider=llm, model=model, api_key=api_key, prefer_mcp=False)
+        if not provider.validate_config():
+            raise ValueError(f"provider {provider.get_provider_name()} is not reachable or not configured")
+    except Exception as e:
+        console.print(f"[bold red]--mode llm: could not set up an LLM provider:[/bold red] {e}")
+        console.print("Fix the provider (e.g. `ollama serve`, ANTHROPIC_API_KEY), or use [bold]--mode fast[/bold].")
+        raise typer.Exit(1)
+
+    provider_name = provider.get_provider_name()
+    # MCPDelegationProvider.chat() always raises — its request/response cycle
+    # isn't wired to any MCP tool yet, so every chunk would bind to nothing.
+    if provider_name == "mcp-delegation":
+        console.print("[bold red]--mode llm: the mcp provider can't bind docs yet.[/bold red] Use --llm ollama, claude, or openai.")
+        raise typer.Exit(1)
+
+    # OllamaProvider quietly substitutes the first installed model when the
+    # requested one is missing — often a large chat model that is far too slow.
+    if provider_name.startswith("ollama:"):
+        requested = model or os.getenv("OLLAMA_MODEL", "llama3")
+        if not provider.model.startswith(requested):
+            console.print(
+                f"[bold yellow]Model '{requested}' is not installed; Ollama will use '{provider.model}'.[/bold yellow] "
+                f"Pick a small model with --model (e.g. --model qwen2.5:7b) if this is slow."
+            )
+
+    console.print(f"Doc binding: [green]llm[/green] via [green]{provider_name}[/green]")
+    return provider
+
+
 @app.command()
 def ingest(
     path: str = typer.Argument(".", help="Path to the repository to ingest"),
-    llm: str = typer.Option(None, help="LLM provider (ollama, claude, openai, mcp). Auto-detects if not specified."),
+    mode: str = typer.Option(None, "--mode", "-m", help="Doc-to-code binding: 'fast' (keyword matching, no LLM — default) or 'llm' (LLM picks the code each doc explains). Env: NERVAPACK_INGEST_MODE."),
+    llm: str = typer.Option(None, help="LLM provider for --mode llm (ollama, claude, openai). Passing it implies --mode llm."),
     model: str = typer.Option(None, help="Model name (provider-specific)"),
     api_key: str = typer.Option(None, help="API key for cloud providers"),
     embeddings: str = typer.Option(None, help="Embedding backend (onnx, ollama). Defaults to ONNX."),
-    no_bind: bool = typer.Option(False, "--no-bind", help="Skip LLM doc-to-code binding (fast keyword binding only). Useful for quick re-ingests."),
+    no_bind: bool = typer.Option(False, "--no-bind", hidden=True, help="Deprecated alias for --mode fast."),
 ):
     """
     Ingest a repository, building the AST and Vector graph.
 
-    LLM Providers:
+    Binding modes (how markdown docs are linked to code):
+      fast  - Keyword matching. No LLM, offline, seconds. (default)
+      llm   - An LLM chooses the code each doc chunk explains. Slower, more precise.
+
+    LLM Providers (--mode llm):
       ollama     - Local Ollama (privacy-first, free)
       claude     - Claude API (requires ANTHROPIC_API_KEY)
       openai     - OpenAI API (requires OPENAI_API_KEY)
-      mcp        - MCP delegation (auto-used in Claude Code/Cursor)
 
     Examples:
-      nervapack ingest .                           # Auto-detect provider
-      nervapack ingest . --llm ollama              # Force Ollama
-      nervapack ingest . --llm claude              # Use Claude API
-      nervapack ingest . --llm openai --model gpt-4o-mini
+      nervapack ingest .                                 # fast mode
+      nervapack ingest . --mode llm                      # LLM mode, local Ollama
+      nervapack ingest . --mode llm --llm ollama --model qwen2.5:7b
+      nervapack ingest . --llm claude                    # LLM mode via Claude API
     """
     from nervapack.parser.ast_parser import scan_directory
     from nervapack.graph.builder import GraphBuilder
-    from nervapack.llm.factory import get_llm_provider
     from rich.prompt import Confirm
     import time
     import os
 
+    bind_mode = _resolve_bind_mode(mode, llm, no_bind)
+
     start_time = time.time()
     console.print(f"[bold blue]Ingesting repository at {path}...[/bold blue]")
+    # Set up the provider before any scanning/embedding, so a misconfigured
+    # --mode llm fails in a second instead of after the whole embedding pass.
+    provider = _setup_bind_provider(llm, model, api_key) if bind_mode == "llm" else None
+    if provider is None:
+        console.print("Doc binding: [green]fast[/green] (keyword matching, no LLM). Use --mode llm for LLM binding.")
 
     console.print("Scanning directory for code entities...")
     entities = scan_directory(path)
@@ -108,55 +188,24 @@ def ingest(
             # Ingest to vector store
             vstore.ingest_chunks(md_chunks)
 
-            # Get LLM provider (skip if --no-bind)
-            provider = None
-            if no_bind:
-                console.print("[dim]--no-bind set: skipping LLM binding, using keyword matching only.[/dim]")
+            # Show cost estimate for cloud providers
+            if provider is not None:
+                estimated_cost = provider.estimate_cost(len(md_chunks))
+                if estimated_cost is not None and estimated_cost > 0:
+                    console.print(f"\n[bold yellow]💰 Cost Estimate[/bold yellow]")
+                    console.print(f"Provider: {provider.get_provider_name()}")
+                    console.print(f"Markdown chunks to bind: {len(md_chunks)}")
+                    console.print(f"Estimated cost: [yellow]${estimated_cost:.2f}[/yellow]")
+                    console.print(f"(Actual cost may vary based on content length)\n")
+
+                    if not Confirm.ask("Proceed with cloud LLM binding?"):
+                        console.print("[yellow]LLM binding cancelled — using fast keyword binding instead.[/yellow]")
+                        provider = None
+
+            if provider is not None:
+                console.print(f"Binding {len(md_chunks)} doc chunks with the LLM (this may take a while)...")
             else:
-                console.print("\n[bold cyan]Setting up LLM provider...[/bold cyan]")
-                try:
-                    provider = get_llm_provider(
-                        provider=llm,
-                        model=model,
-                        api_key=api_key
-                    )
-                    provider_name = provider.get_provider_name()
-
-                    # Validate configuration
-                    if not provider.validate_config():
-                        raise ValueError(f"Provider {provider_name} configuration invalid")
-
-                    console.print(f"Using LLM provider: [green]{provider_name}[/green]")
-
-                    # Show cost estimate for cloud providers
-                    estimated_cost = provider.estimate_cost(len(md_chunks))
-                    if estimated_cost is not None and estimated_cost > 0:
-                        console.print(f"\n[bold yellow]💰 Cost Estimate[/bold yellow]")
-                        console.print(f"Provider: {provider_name}")
-                        console.print(f"Markdown chunks to bind: {len(md_chunks)}")
-                        console.print(f"Estimated cost: [yellow]${estimated_cost:.2f}[/yellow]")
-                        console.print(f"(Actual cost may vary based on content length)\n")
-
-                        # Ask for confirmation
-                        if not Confirm.ask("Proceed with cloud LLM binding?"):
-                            console.print("[yellow]Binding cancelled. Graph created but docs not linked.[/yellow]")
-                            provider = None
-
-                except Exception as e:
-                    console.print(f"[bold yellow]Notice: Install/Start Ollama to unlock semantic doc-code binding. Building structural graph only. ({e})[/bold yellow]")
-                    provider = None
-
-                # MCPDelegationProvider.chat() always raises — the request/response
-                # cycle it's designed for (bind_docs_to_ast_delegated) isn't wired to
-                # any MCP tool yet. Calling bind_docs_to_ast on it would silently do a
-                # full scoring pass per chunk and then swallow the exception, paying
-                # for "semantic" binding while actually returning zero matches. Treat
-                # it as unusable here and fall back to the cheap keyword path instead.
-                if provider is not None and provider.get_provider_name() == "mcp-delegation":
-                    console.print("[dim]MCP delegation binding isn't wired up yet — using keyword matching instead.[/dim]")
-                    provider = None
-
-            console.print("Binding documentation to AST (this may take a while)...")
+                console.print("Binding documentation to AST with keyword matching...")
 
             from nervapack.parser.keyword_binder import build_keyword_index, keyword_search
 
@@ -193,9 +242,13 @@ def ingest(
 
             # Bind concurrently (LLM calls are independent, I/O-bound); apply edges on the main thread.
             from concurrent.futures import ThreadPoolExecutor
-            max_workers = 16 if provider else 1
-            with ThreadPoolExecutor(max_workers=max_workers) as ex:
-                results = list(ex.map(_bind_one, md_chunks))
+            if provider:
+                from rich.progress import track
+                with ThreadPoolExecutor(max_workers=16) as ex:
+                    results = list(track(ex.map(_bind_one, md_chunks), total=len(md_chunks),
+                                         description="LLM binding", console=console))
+            else:
+                results = [_bind_one(c) for c in md_chunks]
 
             for i, (chunk, (matched_ids, source, confidence)) in enumerate(zip(md_chunks, results)):
                 md_node_id = f"md_{chunk['file_path']}_{i}"
@@ -203,7 +256,7 @@ def ingest(
                     if graph.has_node(matched_id):
                         graph.add_edge(md_node_id, matched_id, relation="EXPLAINS", source=source, confidence=confidence)
 
-            console.print("Semantic binding complete.")
+            console.print(f"Doc binding complete ({'llm' if provider else 'fast'}).")
 
     except Exception as e:
         console.print(f"[bold red]Error during ingestion:[/bold red] {e}")
@@ -224,7 +277,13 @@ def ingest(
     console.print(f"[bold green]Ingestion complete in {elapsed_time:.2f} seconds.[/bold green]")
 
 @app.command()
-def sync(path: str = typer.Argument(".", help="Path to the repository to sync")):
+def sync(
+    path: str = typer.Argument(".", help="Path to the repository to sync"),
+    mode: str = typer.Option(None, "--mode", "-m", help="Doc-to-code binding: 'fast' (keyword, default) or 'llm'. Env: NERVAPACK_INGEST_MODE."),
+    llm: str = typer.Option(None, help="LLM provider for --mode llm (ollama, claude, openai). Implies --mode llm."),
+    model: str = typer.Option(None, help="Model name (provider-specific)"),
+    api_key: str = typer.Option(None, help="API key for cloud providers"),
+):
     """
     Sync graph with modified git files.
     """
@@ -238,6 +297,9 @@ def sync(path: str = typer.Argument(".", help="Path to the repository to sync"))
 
     _CODE_EXTS = tuple(LANGUAGE_REGISTRY.keys())
 
+    from nervapack.parser.keyword_binder import build_keyword_index, keyword_search
+
+    bind_mode = _resolve_bind_mode(mode, llm)
     console.print("[bold blue]Syncing changed files with NervaPack graph...[/bold blue]")
     
     tracker = GitTracker(path)
@@ -259,6 +321,8 @@ def sync(path: str = typer.Argument(".", help="Path to the repository to sync"))
     except Exception as e:
         console.print(f"[bold red]Failed to load graph or vector store. Run 'nervapack ingest' first.[/bold red]")
         raise typer.Exit(1)
+
+    provider = _setup_bind_provider(llm, model, api_key) if bind_mode == "llm" else None
 
     ast_parser = ASTParser()
     md_chunker = MarkdownChunker()
@@ -319,15 +383,20 @@ def sync(path: str = typer.Argument(".", help="Path to the repository to sync"))
             if chunks:
                 vstore.ingest_chunks(chunks)
                 
-                from nervapack.llm.summarizer import LLMSummarizer
-                llm = LLMSummarizer()
+                # Rebuilt per file: ast_docs keeps growing as later code files are synced.
+                keyword_index = build_keyword_index(ast_docs) if provider is None else None
                 for i, chunk in enumerate(chunks):
                     md_node_id = f"md_{chunk['file_path']}_{i}"
                     graph.add_node(md_node_id, type="markdown", header=chunk['header'], content=chunk['content'], file_path=chunk['file_path'])
-                    matched_ids = llm.bind_docs_to_ast(chunk['content'], ast_docs)
+                    if provider is not None:
+                        matched_ids = provider.bind_docs_to_ast(chunk['content'], ast_docs)
+                        source, confidence = "semantic-llm", 0.9
+                    else:
+                        matched_ids = keyword_search(chunk['content'], keyword_index)
+                        source, confidence = "keyword", 0.5
                     for matched_id in matched_ids:
                         if graph.has_node(matched_id):
-                            graph.add_edge(md_node_id, matched_id, relation="EXPLAINS", source="semantic-llm", confidence=0.9)
+                            graph.add_edge(md_node_id, matched_id, relation="EXPLAINS", source=source, confidence=confidence)
                             
             console.print(f"Updated Markdown for [cyan]{f}[/cyan]")
             

@@ -313,8 +313,8 @@ _SKIP_DIRS = {
     "dist", "build", "site", "target", "out", "output",
     # Python tooling
     ".eggs", ".tox", ".mypy_cache", ".pytest_cache", ".ruff_cache",
-    # coverage / test artefacts
-    "htmlcov", "coverage",
+    # coverage / test artefacts (.test_nervapack: NervaPack's own scratch copy of a project)
+    "htmlcov", "coverage", ".test_nervapack",
     # JS/TS frameworks
     ".next", ".nuxt", ".svelte-kit", ".turbo",
     # JVM

@@ -25,7 +25,7 @@ The `ingest` command scans your repository and builds the complete knowledge gra
 3. Skips minified files (`.min.js`, `.min.ts`, `.bundle.js`, etc.) and any file that produces more than 500 entities, both strong signals of non-user code.
 4. Scans markdown documentation and chunks by header hierarchy.
 5. Embeds entities into ChromaDB vector store using `upsert` — re-ingesting the same project is fully idempotent and does not duplicate data. Warm re-ingest (unchanged files) completes in under 1 second.
-6. Uses LLM to bind docs to code (creates `EXPLAINS` edges). Falls back to free keyword-overlap matching when no `--llm` flag is given.
+6. Binds docs to code (creates `EXPLAINS` edges) using the [binding mode](#binding-modes) you choose — fast keyword matching by default, or an LLM with `--mode llm`.
 7. Saves graph to `.nervapack/graph.graphml`.
 
 !!! tip "Exclude project-specific directories"
@@ -46,34 +46,53 @@ The `ingest` command scans your repository and builds the complete knowledge gra
 | Option | Description | Default |
 |--------|-------------|---------|
 | `PATH` | Directory to scan | `.` (current) |
-| `--llm` | LLM provider (ollama, claude, openai, mcp) | Auto-detect |
+| `--mode`, `-m` | Doc binding mode: `fast` or `llm` (see below) | `fast`, or `NERVAPACK_INGEST_MODE` |
+| `--llm` | LLM provider for `--mode llm` (`ollama`, `claude`, `openai`). Passing it implies `--mode llm` | `ollama` |
 | `--model` | Model name (provider-specific) | Provider default |
 | `--api-key` | API key for cloud providers | From env vars |
 | `--embeddings` | Embedding backend (`onnx`, `ollama`) | `onnx` |
-| `--no-bind` | Skip LLM binding; use fast keyword matching only | off |
+
+`--no-bind` still works as a deprecated alias for `--mode fast`.
+
+---
+
+## Binding Modes
+
+Ingest always embeds every code entity and doc chunk locally (ONNX). The mode only decides how each markdown chunk gets linked to the code it describes.
+
+| | `fast` (default) | `llm` |
+|---|---|---|
+| How | Links a chunk to the functions/classes it names *as code* — in backticks, as a call (`name(`), or as a compound identifier like `build_keyword_index` | An LLM picks, from the ~15 nearest entities, the ones the chunk actually explains |
+| Needs | Nothing — fully offline | Ollama running, or an Anthropic / OpenAI API key |
+| Speed | Seconds, whatever the doc count | Roughly one LLM call per doc chunk — minutes to hours on large doc sets |
+| Edge tag | `source="keyword"`, confidence 0.5 | `source="semantic-llm"`, confidence 0.9 |
+
+Fast mode favours precision. A section that only describes code in prose, without naming it, gets no edge. Matching is case-sensitive and ignores import statements, file paths, CLI flags (`--model`) and keyword arguments. A name defined in more than three places, such as `__init__` or a common `load`, only matches when the chunk also names its file. Use `--mode llm` when your docs mostly describe code in prose.
+
+An LLM is **never** used unless you ask for one. Earlier versions quietly switched to LLM binding whenever Ollama was running, and when the requested model was missing they used whatever model was installed first, which could be a large chat model at 8+ seconds per chunk.
+
+With `--mode llm`, a provider that isn't reachable or configured stops the ingest with an error before any work starts. NervaPack doesn't fall back to keyword binding silently. Set `NERVAPACK_INGEST_MODE=llm` to make LLM mode the default for `ingest` and `sync`.
+
+!!! tip "Pick a small, fast model for local LLM mode"
+    The binding prompt is a short classification task. A 7B model such as `qwen2.5:7b` handles it well; a 24B chat model is many times slower without being more accurate. NervaPack warns you when the requested Ollama model isn't installed and another one is substituted.
 
 ---
 
 ## Examples
 
-### Basic usage
+### Basic usage (fast mode)
 ```bash
 cd your-project/
 nervapack ingest .
 ```
 
-### With specific LLM
+### LLM mode
 ```bash
-nervapack ingest . --llm claude
-nervapack ingest . --llm openai --model gpt-4o
+nervapack ingest . --mode llm                          # local Ollama
+nervapack ingest . --mode llm --model qwen2.5:7b       # pick the Ollama model
+nervapack ingest . --llm claude                        # Claude API (implies --mode llm)
+nervapack ingest . --llm openai --model gpt-4o-mini
 ```
-
-### Fast re-ingest (no LLM)
-```bash
-nervapack ingest . --no-bind
-```
-
-Use this when you want to rebuild the graph quickly without the LLM doc-to-code binding step. All markdown nodes and AST entities are indexed correctly; only the semantic `EXPLAINS` edges are replaced with keyword-overlap edges. Completes in under 1 second regardless of project size.
 
 ### Different directory
 ```bash
@@ -86,6 +105,7 @@ nervapack ingest /path/to/repo
 
 ```
 Ingesting repository at .
+Doc binding: fast (keyword matching, no LLM). Use --mode llm for LLM binding.
 
 Scanning directory for code entities...
 Found 378 AST entities.
@@ -99,11 +119,8 @@ AST Vector ingestion complete.
 Scanning directory for Markdown docs...
 Found 12 Markdown chunks.
 
-Setting up LLM provider...
-Using LLM provider: ollama
-
-Binding documentation to AST...
-Semantic binding complete.
+Binding documentation to AST with keyword matching...
+Doc binding complete (fast).
 
 Ingestion complete.
 ```
@@ -146,7 +163,7 @@ Typical times for a Python project (ONNX embeddings, no LLM):
 
 Embedding dominates ingest time — parsing and graph construction together account for well under a second even on large repositories. NervaPack uses every CPU core for it by default; see [Tuning Ingest Performance](../../getting-started/installation.md#tuning-ingest-performance) to change that.
 
-**LLM binding** (the `EXPLAINS` edge step) adds time proportional to the number of markdown chunks. Cloud APIs (Claude, OpenAI) are 5–10× faster than Ollama for this step. Skip it with `--no-bind` if you only need the structural graph — ingest completes in under 1 second.
+**`--mode llm`** adds roughly one LLM call per markdown chunk, and a progress bar shows how far along it is. Cloud APIs (Claude, OpenAI) are 5–10× faster than a local Ollama for this step, and model size matters a lot locally. As a reference point, on the NervaPack repo's 1,264 doc chunks, fast mode finishes the whole ingest in ~20s, while a 24B Ollama model takes ~8s *per chunk*.
 
 ---
 
