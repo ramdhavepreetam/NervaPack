@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [0.8.1] - 2026-10-05
 
 ### Changed
 - **Two explicit doc-binding modes: `--mode fast` (default) and `--mode llm`.** `ingest` and `sync` now take `--mode fast|llm` (or `NERVAPACK_INGEST_MODE`). Fast mode links docs to code by keyword matching and never contacts an LLM. LLM mode lets Ollama, Claude or OpenAI pick the code each doc chunk explains. Passing `--llm <provider>` implies `--mode llm`, and `--no-bind` remains as an alias for `--mode fast`. In LLM mode a misconfigured provider now stops ingest up front instead of silently degrading, and a progress bar tracks the binding pass.
